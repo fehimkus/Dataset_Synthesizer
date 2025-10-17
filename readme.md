@@ -1,45 +1,130 @@
-NVIDIA Deep learning Dataset Synthesizer (NDDS)
-===============================================
+# NVIDIA Deep Learning Dataset Synthesizer (NDDS) — **UE5 Modern Port**
+### ⚡ Fully updated for Unreal Engine 5.5 (Linux / Windows / macOS)
 
-Overview
---------
+![NDDS Demo](./NDDSIntro.png)
 
-**NDDS** is a UE4 plugin from NVIDIA to empower computer vision researchers to export high-quality synthetic images with metadata. NDDS supports images, segmentation, depth, object pose, bounding box, keypoints, and custom stencils. In addition to the exporter, the plugin includes different components for generating highly randomized images. This randomization includes lighting, objects, camera position, poses, textures, and distractors, as well as camera path following, and so forth. Together, these components allow researchers to easily create randomized scenes for training deep neural networks.
+---
 
-![](./NDDSIntro.png)
+## 🚀 Overview
 
-_Example of an image generated using NDDS, along with ground truth segmentation, depth, and object poses._ <br> For utilities to help visualize annotation data associated with synthesized images, see the NVIDIA dataset utilities (NVDU) https://github.com/NVIDIA/Dataset_Utilities.
+**NDDS (Deep Learning Dataset Synthesizer)** is a powerful **Unreal Engine plugin** that enables researchers and developers to generate high-quality **synthetic datasets** for computer-vision and robotics applications.  
 
-Downloading
------------
-This repository uses gitLFS -- **DO NOT DOWNLOAD AS .ZIP**:
+This updated fork ports the original **NVIDIA NDDS (UE 4.22)** project to **Unreal Engine 5.5**, with full support for:
 
-> **First, install git LFS (large file storage):** https://git-lfs.github.com/ , **then lfs clone**.
+- ✅ Modern RHI (Vulkan / DX12)  
+- ✅ UE5 Shader Pipeline and Modular Build System  
+- ✅ Improved C++ 20 compatibility  
+- ✅ Rewritten `NVTextureReader` and `SceneCapturer` modules  
+- ✅ Native Linux build support (tested on Debian 13 & Ubuntu 22.04)  
 
-For further details, please see https://github.com/NVIDIA/Dataset_Synthesizer/blob/master/Documentation/NDDS.pdf
+NDDS can capture **RGB**, **depth**, **segmentation**, **normals**, **bounding boxes**, and **object poses**, along with **JSON annotations** — ideal for training and evaluating deep-learning models in tasks such as detection, pose estimation, and domain adaptation.
 
-**`RELEASE NOTES: 4.22 known issue`**
+---
 
-<!--This NDDS version uses UE4 version `4.22` with the following release note: -->
-> If you are using material randomization with more than 10 objects which change materials every frame, you might encounter a hang when stopping the play-in-editor session.  The capturing process will still work, but the `uniform buffer memory` will keep increasing and when user stops the capture session, it takes UE extended time to release the memory.  If it takes too long after stopping the play-in-editor session, we recommend to simply shutdown the editor and restart it.  The only other workaround is to keep using UE4.21, which requires use of NDDS v1.1.
-> 
-> This problem is specific to UE4 4.22, as it now automatically uses mesh instancing to improve the performance when rendering a large quantity of meshes.  Now, every time a new mesh is created or its material is changed, the `uniform buffer memory` allocation is increased.          
-> 
-> This problem affects both DirectX and OpenGL users.  Although Vulkan doesn't get affected by this, Vulkan doesn't capture depth and class segmentation.
+## 🧠 Key Features
 
+- 🎥 **High-fidelity synthetic data** generation from Unreal Engine 5 scenes  
+- 🧩 Randomized lighting, materials, object poses, textures & camera paths  
+- 📦 Support for RGB, depth, normal, instance segmentation, and class masks  
+- 🪄 Camera trajectory recording and motion blur simulation  
+- 🔁 Async pixel readback pipeline (`NVTextureReader`, UE5 compatible)  
+- 💡 Multi-view & multi-sensor capture via Scene Capturer Viewpoints  
+- 🧰 JSON & image exporters for Python / PyTorch integration  
 
-Motivation
-----------
-Training and testing deep learning systems is an expensive and involved task due to the need for hand-labeled data. This is problematic when the task demands expert knowledge or not-so-obvious annotations (e.g., 3D bounding box vertices).  In order to overcome these limitations we have been exploring the use of simulators for generating labeled data. We have shown in [1,2] that highly randomized synthetic data can be used to train computer vision systems for real-world applications, thus showing successful domain transfer.
+---
 
-Citation
---------
-If you use this tool in a research project, please cite as follows:
-> \@misc{to2018ndds,<br> author = {Thang To and Jonathan Tremblay and Duncan McKay and Yukie Yamaguchi and Kirby Leung and Adrian Balanon and Jia Cheng and William Hodge and Stan Birchfield},<br> note= {\url{ https://github.com/NVIDIA/Dataset_Synthesizer }},<br> title = {{NDDS}: {NVIDIA} Deep Learning Dataset Synthesizer},<br> Year = 2018<br>}
+## 🧩 Prerequisites
 
+| Requirement | Version / Notes |
+|--------------|----------------|
+| **Unreal Engine** | 5.5 ( built from source ) |
+| **.NET SDK** | 8.0 or newer (for Unreal Build Tool) |
+| **Vulkan SDK** | 1.3+ (recommended for Linux) |
+| **Git LFS** | Required for cloning large assets |
+| **C++ Toolchain** | GCC 11+ (Linux) or MSVC 2022 (Windows) |
 
-References
-----------
-[1] J. Tremblay, T. To, A. Molchanov, S. Tyree, J. Kautz, S. Birchfield. Synthetically Trained Neural Networks for Learning Human-Readable Plans from Real-World Demonstrations. In International Conference on Robotics and Automation (ICRA), 2018.
+---
 
-[2] J. Tremblay, T. To, S. Birchfield.  Falling Things:  A Synthetic Dataset for 3D Object Detection and Pose Estimation.  CVPR Workshop on Real World Challenges and New Benchmarks for Deep Learning in Robotic Vision, 2018.
+## ⚙️ Building on Linux
+
+### 1️⃣ Clone with Git LFS
+```bash
+git lfs install
+git clone https://github.com/<your-username>/Dataset_Synthesizer.git NDDS
+cd NDDS
+```
+
+### 2️⃣ Compile Unreal Editor with NDDS plugin
+```bash
+dotnet /opt/UnrealEngine/Engine/Binaries/DotNET/UnrealBuildTool/UnrealBuildTool.dll \
+  Development Linux \
+  "-Project=$(pwd)/Source 5.5/NDDS.uproject" \
+  -TargetType=Editor -Progress -NoEngineChanges -NoHotReloadFromIDE
+```
+
+### 3️⃣ Launch the Editor
+```bash
+/opt/UnrealEngine/Engine/Binaries/Linux/UnrealEditor \
+  "$(pwd)/Source 5.5/NDDS.uproject" -vulkan
+```
+
+> 💡 If Vulkan fails, try `-opengl4` or check your GPU drivers with `vulkaninfo`.
+
+---
+
+## 🧱 Plugin Structure
+
+```
+Plugins/NVSceneCapturer/
+├── Source/NVSceneCapturer/
+│   ├── Public/
+│   │   ├── NVSceneCapturerUtils.h
+│   │   ├── NVTextureReader.h
+│   │   ├── NVSceneCapturerViewpointComponent.h
+│   └── Private/
+│       ├── NVTextureReader.cpp
+│       ├── NVSceneCapturerViewpointComponent.cpp
+│       ├── NVSceneFeatureExtractor_*.cpp
+```
+
+---
+
+## 🧪 Verification (Test Capture)
+
+1. Open the project in Unreal Editor.  
+2. Place an `NVSceneCapturerActor` in the scene.  
+3. Press **Play → Capture Dataset**.  
+4. Output images and JSON annotations will be saved under:
+
+```
+Saved/DatasetCaptures/
+```
+
+---
+
+## 🧰 Troubleshooting
+
+| Issue | Fix |
+|--------|------|
+| ❌ `PlatformCreateDynamicRHI()` crash | Missing Vulkan driver → install `vulkan-tools` and `mesa-vulkan-drivers` |
+| ⚠️ `AddReferencedObject` deprecated | Fixed in UE5 branch (`AddObjectRef` removed in favor of TObjectPtr) |
+| ⚠️ `ShowFlagSettings` deprecated | Replaced with `SetShowFlagSettings()` API |
+| 🧩 Build fails with `GetRenderTargetItem()` | Updated RHI API in `NVTextureReader` and `CopyTexture2D()` methods |
+
+---
+
+## 🧠 Citation
+
+If you use this plugin for research or publications, please cite the original authors:
+
+> **Thang To**, **Jonathan Tremblay**, **Duncan McKay**, **Yukie Yamaguchi**, **Kirby Leung**, **Adrian Balanon**, **Jia Cheng**, **William Hodge**, **Stan Birchfield**  
+>  
+> *NDDS: NVIDIA Deep Learning Dataset Synthesizer.*  
+> [https://github.com/NVIDIA/Dataset_Synthesizer](https://github.com/NVIDIA/Dataset_Synthesizer)
+
+---
+
+## 🧩 Acknowledgements
+
+This UE5 modernization was developed by **Fehim Kuş** (@fehimkus) as part of a deep-learning research pipeline for synthetic dataset generation and robotic vision.  
+Original NDDS © NVIDIA Corporation (2018).
