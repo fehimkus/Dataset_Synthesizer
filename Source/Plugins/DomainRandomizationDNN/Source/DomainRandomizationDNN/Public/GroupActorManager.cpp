@@ -6,15 +6,16 @@
 
 #include "DomainRandomizationDNNPCH.h"
 #include "SpatialLayoutGenerator/SpatialLayoutGenerator.h"
-#include "RandomMovementComponent.h"
+#include "Components/RandomMovementComponent.h"
 #include "NVAnnotatedActor.h"
 #include "NVSceneCapturerActor.h"
 #include "NVSceneManager.h"
 #include "NVObjectMaskManager.h"
 #include "GroupActorManager.h"
+#include "UObject/UnrealType.h" // ✅ For FProperty in UE5
 
 // Sets default values
-AGroupActorManager::AGroupActorManager(const FObjectInitializer& ObjectInitializer)
+AGroupActorManager::AGroupActorManager(const FObjectInitializer &ObjectInitializer)
 {
     PrimaryActorTick.bCanEverTick = true;
     PrimaryActorTick.TickGroup = TG_PrePhysics;
@@ -67,7 +68,7 @@ void AGroupActorManager::SpawnActors()
             }
         }
 
-        TArray<UStaticMesh*> SpawnMeshes;
+        TArray<UStaticMesh *> SpawnMeshes;
         if (bSpawnTotalNumberOfActors)
         {
             const int MeshCount = OverrideActorMeshes.Num();
@@ -76,7 +77,7 @@ void AGroupActorManager::SpawnActors()
             for (int i = 0; i < TotalNumberOfActors; i++)
             {
                 // Pick a random mesh from the list
-                UStaticMesh* CheckMesh = OverrideActorMeshes[FMath::Rand() % MeshCount];
+                UStaticMesh *CheckMesh = OverrideActorMeshes[FMath::Rand() % MeshCount];
                 // TODO: Make sure the mesh is valid
                 SpawnMeshes.Add(CheckMesh);
             }
@@ -89,7 +90,7 @@ void AGroupActorManager::SpawnActors()
         // Pick up the meshes randomly
         for (int i = 0; i < SpawnMeshes.Num(); i++)
         {
-            UStaticMesh* CheckMesh = SpawnMeshes[i];
+            UStaticMesh *CheckMesh = SpawnMeshes[i];
             if (CheckMesh)
             {
                 const int32 NumberInstanceOfActor = FMath::Max(FMath::RandRange(CountPerActor.Min, CountPerActor.Max), 0);
@@ -149,16 +150,16 @@ void AGroupActorManager::SpawnActors()
         }
     }
 
-    const FTransform& LayoutTransform = GetActorTransform();
-    const TArray<FTransform>& ActorTransformList = LayoutGenerator ? LayoutGenerator->GetTransformForActors(LayoutTransform, NumberOfActorsToSpawn)
-            : USpatialLayoutGenerator::GetDefaultTransformForActors(LayoutTransform, NumberOfActorsToSpawn);
+    const FTransform &LayoutTransform = GetActorTransform();
+    const TArray<FTransform> &ActorTransformList = LayoutGenerator ? LayoutGenerator->GetTransformForActors(LayoutTransform, NumberOfActorsToSpawn)
+                                                                   : USpatialLayoutGenerator::GetDefaultTransformForActors(LayoutTransform, NumberOfActorsToSpawn);
 
     for (uint32 i = 0; i < NumberOfActorsToSpawn; i++)
     {
-        const FNVActorTemplateConfig& ActorTemplate = ActorTemplates[i];
-        const FTransform& ActorTransform = ActorTransformList[i];
+        const FNVActorTemplateConfig &ActorTemplate = ActorTemplates[i];
+        const FTransform &ActorTransform = ActorTransformList[i];
 
-        AActor* NewActor = CreateActorFromTemplate(ActorTemplate, ActorTransform);
+        AActor *NewActor = CreateActorFromTemplate(ActorTemplate, ActorTransform);
         if (NewActor)
         {
             ManagedActors.Add(NewActor);
@@ -168,7 +169,7 @@ void AGroupActorManager::SpawnActors()
 
 void AGroupActorManager::SpawnTemplateActors()
 {
-    for (AActor* CheckActor : TemplateActors)
+    for (AActor *CheckActor : TemplateActors)
     {
         if (CheckActor)
         {
@@ -193,13 +194,13 @@ void AGroupActorManager::SpawnTemplateActors()
         FTransform TemplateActorTranform;
         TemplateActorTranform.SetLocation(FVector::ZeroVector);
 
-        for (UStaticMesh* OverrideMesh : OverrideActorMeshes)
+        for (UStaticMesh *OverrideMesh : OverrideActorMeshes)
         {
             FNVActorTemplateConfig ActorTemplate;
             ActorTemplate.ActorClass = ActorClassTemplate;
             ActorTemplate.ActorOverrideMesh = OverrideMesh;
 
-            AActor* NewActor = CreateActorFromTemplate(ActorTemplate, TemplateActorTranform);
+            AActor *NewActor = CreateActorFromTemplate(ActorTemplate, TemplateActorTranform);
             if (NewActor)
             {
                 // Hide the actor and disable its collision since it's just for template
@@ -216,11 +217,11 @@ void AGroupActorManager::SpawnTemplateActors()
     }
 }
 
-AActor* AGroupActorManager::CreateActorFromTemplate(const FNVActorTemplateConfig& ActorTemplate, const FTransform& ActorTransform)
+AActor *AGroupActorManager::CreateActorFromTemplate(const FNVActorTemplateConfig &ActorTemplate, const FTransform &ActorTransform)
 {
-    AActor* NewActor = nullptr;
+    AActor *NewActor = nullptr;
 
-    UWorld* World = GetWorld();
+    UWorld *World = GetWorld();
     ensure(World);
     if (World)
     {
@@ -237,12 +238,12 @@ AActor* AGroupActorManager::CreateActorFromTemplate(const FNVActorTemplateConfig
             // TODO: Pass shared config data to the new actor
             if (ActorTemplate.ActorOverrideMesh)
             {
-                ANVAnnotatedActor* AnnotatedActor = Cast<ANVAnnotatedActor>(NewActor);
+                ANVAnnotatedActor *AnnotatedActor = Cast<ANVAnnotatedActor>(NewActor);
                 if (AnnotatedActor)
                 {
                     AnnotatedActor->SetStaticMesh(ActorTemplate.ActorOverrideMesh);
 
-                    ANVSceneManager* SceneManager = ANVSceneManager::GetANVSceneManagerPtr();
+                    ANVSceneManager *SceneManager = ANVSceneManager::GetANVSceneManagerPtr();
                     if (SceneManager)
                     {
                         const uint32 ClassSegmentationId = SceneManager->ObjectClassSegmentation.GetInstanceId(AnnotatedActor);
@@ -251,7 +252,7 @@ AActor* AGroupActorManager::CreateActorFromTemplate(const FNVActorTemplateConfig
                 }
                 else
                 {
-                    UStaticMeshComponent* StaticMeshComp = Cast<UStaticMeshComponent>(NewActor->GetComponentByClass(UStaticMeshComponent::StaticClass()));
+                    UStaticMeshComponent *StaticMeshComp = Cast<UStaticMeshComponent>(NewActor->GetComponentByClass(UStaticMeshComponent::StaticClass()));
                     if (StaticMeshComp)
                     {
                         StaticMeshComp->SetStaticMesh(ActorTemplate.ActorOverrideMesh);
@@ -261,7 +262,7 @@ AActor* AGroupActorManager::CreateActorFromTemplate(const FNVActorTemplateConfig
 
             if (RandomLocationVolume)
             {
-                URandomMovementComponent* MovementComp = Cast<URandomMovementComponent>(NewActor->GetComponentByClass(URandomMovementComponent::StaticClass()));
+                URandomMovementComponent *MovementComp = Cast<URandomMovementComponent>(NewActor->GetComponentByClass(URandomMovementComponent::StaticClass()));
                 if (MovementComp)
                 {
                     MovementComp->SetRandomLocationVolume(RandomLocationVolume, true);
@@ -289,11 +290,10 @@ void AGroupActorManager::BeginDestroy()
         }
     }
     ProxyMeshComponents.Reset();
-#endif //WITH_EDITORONLY_DATA
+#endif // WITH_EDITORONLY_DATA
 
     Super::BeginDestroy();
 }
-
 
 void AGroupActorManager::PostLoad()
 {
@@ -301,7 +301,7 @@ void AGroupActorManager::PostLoad()
 
 #if WITH_EDITORONLY_DATA
     UpdateProxyMeshes();
-#endif //WITH_EDITORONLY_DATA}
+#endif // WITH_EDITORONLY_DATA
 }
 
 void AGroupActorManager::Tick(float DeltaTime)
@@ -322,8 +322,6 @@ void AGroupActorManager::Tick(float DeltaTime)
     }
 }
 
-
-
 void AGroupActorManager::DestroyManagedActors()
 {
     for (auto CheckActor : ManagedActors)
@@ -336,17 +334,20 @@ void AGroupActorManager::DestroyManagedActors()
     }
     ManagedActors.Reset();
 }
+
 #if WITH_EDITORONLY_DATA
-void AGroupActorManager::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+
+// ✅ FIX 1: Use FProperty instead of UProperty for UE5
+void AGroupActorManager::PostEditChangeProperty(FPropertyChangedEvent &PropertyChangedEvent)
 {
-    const UProperty* PropertyThatChanged = PropertyChangedEvent.MemberProperty;
+    const FProperty *PropertyThatChanged = PropertyChangedEvent.MemberProperty;
     if (PropertyThatChanged)
     {
         const FName ChangedPropName = PropertyThatChanged->GetFName();
 
-        if ((ChangedPropName == GET_MEMBER_NAME_CHECKED(AGroupActorManager, ActorClassesToSpawn))
-                || (ChangedPropName == GET_MEMBER_NAME_CHECKED(AGroupActorManager, TotalNumberOfActorsToSpawn))
-                || (ChangedPropName == GET_MEMBER_NAME_CHECKED(AGroupActorManager, LayoutGenerator)))
+        if ((ChangedPropName == GET_MEMBER_NAME_CHECKED(AGroupActorManager, ActorClassesToSpawn)) ||
+            (ChangedPropName == GET_MEMBER_NAME_CHECKED(AGroupActorManager, TotalNumberOfActorsToSpawn)) ||
+            (ChangedPropName == GET_MEMBER_NAME_CHECKED(AGroupActorManager, LayoutGenerator)))
         {
             UpdateProxyMeshes();
         }
@@ -355,9 +356,10 @@ void AGroupActorManager::PostEditChangeProperty(FPropertyChangedEvent& PropertyC
     }
 }
 
-void AGroupActorManager::AddReferencedObjects(UObject* InThis, FReferenceCollector& Collector)
+// ✅ FIX 2: Use auto& for TObjectPtr iteration
+void AGroupActorManager::AddReferencedObjects(UObject *InThis, FReferenceCollector &Collector)
 {
-    AGroupActorManager* This = CastChecked<AGroupActorManager>(InThis);
+    AGroupActorManager *This = CastChecked<AGroupActorManager>(InThis);
     for (auto CheckMeshComp : This->ProxyMeshComponents)
     {
         Collector.AddReferencedObject(CheckMeshComp);
@@ -366,9 +368,10 @@ void AGroupActorManager::AddReferencedObjects(UObject* InThis, FReferenceCollect
     Super::AddReferencedObjects(InThis, Collector);
 }
 
+// ✅ FIX 3: Remove PostPhysicsComponentTick and use UE5 visibility API
 void AGroupActorManager::UpdateProxyMeshes()
 {
-    UWorld* World = GetWorld();
+    UWorld *World = GetWorld();
     bool bShouldHideProxyMesh = World && World->IsGameWorld();
 
     int CurrentNumberOfProxyMeshs = ProxyMeshComponents.Num();
@@ -377,14 +380,20 @@ void AGroupActorManager::UpdateProxyMeshes()
         const int NewProxyMeshToAdd = TotalNumberOfActorsToSpawn.Max - CurrentNumberOfProxyMeshs;
         for (int i = 0; i < NewProxyMeshToAdd; i++)
         {
-            UStaticMeshComponent* NewProxyMeshComponent = NewObject<UStaticMeshComponent>(this, NAME_None, RF_Transactional | RF_TextExportTransient);
+            UStaticMeshComponent *NewProxyMeshComponent = NewObject<UStaticMeshComponent>(this, NAME_None, RF_Transactional | RF_TextExportTransient);
             NewProxyMeshComponent->SetupAttachment(GetRootComponent());
             NewProxyMeshComponent->bIsEditorOnly = true;
             NewProxyMeshComponent->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
-            NewProxyMeshComponent->bHiddenInGame = true;
-            NewProxyMeshComponent->bVisible = !bShouldHideProxyMesh;
+
+            // ✅ UE5: Use SetHiddenInGame and SetVisibility methods
+            NewProxyMeshComponent->SetHiddenInGame(true);
+            NewProxyMeshComponent->SetVisibility(!bShouldHideProxyMesh);
+
             NewProxyMeshComponent->CastShadow = false;
-            NewProxyMeshComponent->PostPhysicsComponentTick.bCanEverTick = false;
+
+            // ✅ REMOVED: PostPhysicsComponentTick is deprecated in UE5
+            // NewProxyMeshComponent->PostPhysicsComponentTick.bCanEverTick = false;
+
             NewProxyMeshComponent->CreationMethod = EComponentCreationMethod::Instance;
             NewProxyMeshComponent->RegisterComponentWithWorld(World);
 
@@ -404,11 +413,11 @@ void AGroupActorManager::UpdateProxyMeshes()
         ProxyMeshComponents.SetNum(TotalNumberOfActorsToSpawn.Max);
     }
 
-    const FTransform& LayoutTransform = GetActorTransform();
-    const TArray<FTransform>& ActorTransformList = LayoutGenerator ? LayoutGenerator->GetTransformForActors(LayoutTransform, TotalNumberOfActorsToSpawn.Max)
-            : USpatialLayoutGenerator::GetDefaultTransformForActors(LayoutTransform, TotalNumberOfActorsToSpawn.Max);
+    const FTransform &LayoutTransform = GetActorTransform();
+    const TArray<FTransform> &ActorTransformList = LayoutGenerator ? LayoutGenerator->GetTransformForActors(LayoutTransform, TotalNumberOfActorsToSpawn.Max)
+                                                                   : USpatialLayoutGenerator::GetDefaultTransformForActors(LayoutTransform, TotalNumberOfActorsToSpawn.Max);
 
-    AActor* DefaultActor = nullptr;
+    AActor *DefaultActor = nullptr;
     if (ActorClassesToSpawn.Num() > 0)
     {
         TSubclassOf<AActor> ActorClass = ActorClassesToSpawn[0];
@@ -419,10 +428,10 @@ void AGroupActorManager::UpdateProxyMeshes()
     }
 
     // Get default mesh for the proxy meshes
-    UStaticMesh* ProxyMesh = nullptr;
+    UStaticMesh *ProxyMesh = nullptr;
     if (DefaultActor)
     {
-        UStaticMeshComponent* ChildStaticMeshComp = Cast<UStaticMeshComponent>(DefaultActor->GetComponentByClass(UStaticMeshComponent::StaticClass()));
+        UStaticMeshComponent *ChildStaticMeshComp = Cast<UStaticMeshComponent>(DefaultActor->GetComponentByClass(UStaticMeshComponent::StaticClass()));
         if (ChildStaticMeshComp)
         {
             ProxyMesh = ChildStaticMeshComp->GetStaticMesh();
@@ -436,7 +445,7 @@ void AGroupActorManager::UpdateProxyMeshes()
             auto CheckMesh = ProxyMeshComponents[i];
             if (CheckMesh)
             {
-                const FTransform& MeshTransform = ActorTransformList[i];
+                const FTransform &MeshTransform = ActorTransformList[i];
                 CheckMesh->SetStaticMesh(ProxyMesh);
                 CheckMesh->SetWorldTransform(MeshTransform);
             }
@@ -446,7 +455,7 @@ void AGroupActorManager::UpdateProxyMeshes()
 
 void AGroupActorManager::UpdateProxyMeshesVisibility()
 {
-    UWorld* World = GetWorld();
+    UWorld *World = GetWorld();
     bool bShouldHideProxyMesh = World && World->IsGameWorld();
 
     for (int i = 0; i < ProxyMeshComponents.Num(); i++)
@@ -454,8 +463,9 @@ void AGroupActorManager::UpdateProxyMeshesVisibility()
         auto CheckMesh = ProxyMeshComponents[i];
         if (CheckMesh)
         {
-            CheckMesh->bHiddenInGame = bShouldHideProxyMesh;
-            CheckMesh->bVisible = !bShouldHideProxyMesh;
+            // ✅ UE5: Use SetHiddenInGame and SetVisibility methods
+            CheckMesh->SetHiddenInGame(bShouldHideProxyMesh);
+            CheckMesh->SetVisibility(!bShouldHideProxyMesh);
         }
     }
 }

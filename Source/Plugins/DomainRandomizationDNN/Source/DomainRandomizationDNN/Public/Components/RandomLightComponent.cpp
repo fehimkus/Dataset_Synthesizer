@@ -4,8 +4,14 @@
 * International License.  (https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode)
 */
 
-#include "DomainRandomizationDNNPCH.h"
-#include "RandomLightComponent.h"
+#include "RandomLightComponent.h"      // IWYU: own header first
+#include "DomainRandomizationDNNPCH.h" // (optional) precompiled header if used
+#include "Components/LightComponent.h" // for ULightComponent
+#include "Engine/World.h"              // for GetWorld()
+#include "Math/Color.h"
+#include "Math/UnrealMathUtility.h" // for FMath
+#include "UObject/UnrealType.h"     // for FProperty (if needed for editor)
+#include "Logging/LogMacros.h"
 
 // Sets default values
 URandomLightComponent::URandomLightComponent()
@@ -15,13 +21,12 @@ URandomLightComponent::URandomLightComponent()
 
 void URandomLightComponent::OnRandomization_Implementation()
 {
-    AActor* OwnerActor = GetOwner();
-    if (OwnerActor)
+    if (AActor *OwnerActor = GetOwner())
     {
-        TArray<ULightComponent*> RandLightCompList;
+        TArray<ULightComponent *> RandLightCompList;
         OwnerActor->GetComponents(RandLightCompList);
 
-        for (ULightComponent* LightComp : RandLightCompList)
+        for (ULightComponent *LightComp : RandLightCompList)
         {
             if (!LightComp)
             {
@@ -30,23 +35,23 @@ void URandomLightComponent::OnRandomization_Implementation()
 
             if (bShouldModifyIntensity)
             {
-                float RandIntensity = FMath::RandRange(IntensityRange.Min, IntensityRange.Max);
+                const float RandIntensity = FMath::RandRange(IntensityRange.Min, IntensityRange.Max);
                 LightComp->SetIntensity(RandIntensity);
             }
 
             if (bShouldModifyColor)
             {
-                FLinearColor RandomColor = ColorData.GetRandomColor();
+                const FLinearColor RandomColor = ColorData.GetRandomColor();
                 LightComp->SetLightColor(RandomColor);
             }
         }
     }
 }
 
-#if WITH_EDITORONLY_DATA
-void URandomLightComponent::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent)
+#if WITH_EDITOR
+void URandomLightComponent::PostEditChangeProperty(FPropertyChangedEvent &PropertyChangedEvent)
 {
-    const UProperty* PropertyThatChanged = PropertyChangedEvent.MemberProperty;
+    FProperty *PropertyThatChanged = PropertyChangedEvent.MemberProperty;
     if (PropertyThatChanged)
     {
         const FName ChangedPropName = PropertyThatChanged->GetFName();
@@ -59,4 +64,4 @@ void URandomLightComponent::PostEditChangeProperty(struct FPropertyChangedEvent&
         Super::PostEditChangeProperty(PropertyChangedEvent);
     }
 }
-#endif //WITH_EDITORONLY_DATA
+#endif // WITH_EDITOR

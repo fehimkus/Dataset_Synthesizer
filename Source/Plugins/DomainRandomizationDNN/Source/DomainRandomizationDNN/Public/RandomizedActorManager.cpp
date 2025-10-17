@@ -6,7 +6,7 @@
 
 #include "DomainRandomizationDNNPCH.h"
 #include "RandomizedActorManager.h"
-#include "RandomMovementComponent.h"
+#include "Components/RandomMovementComponent.h"
 
 // Sets default values
 ARandomizedActorManager::ARandomizedActorManager()

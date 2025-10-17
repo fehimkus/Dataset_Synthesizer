@@ -5,7 +5,7 @@
 */
 
 #include "DomainRandomizationDNNPCH.h"
-#include "RandomMovementComponent.h"
+#include "Components/RandomMovementComponent.h"
 #include "NVSceneMarker_Volume.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine.h"
@@ -29,7 +29,7 @@ void ANVSceneMarker_Volume::OnObserverAdded(AActor* NewObserver)
 
     if (NewObserver)
     {
-        TArray<UActorComponent*> RandomMovementComps = NewObserver->GetComponentsByClass(URandomMovementComponent::StaticClass());
+        TArray<UActorComponent*> RandomMovementComps = NewObserver->K2_GetComponentsByClass(URandomMovementComponent::StaticClass());
         for (auto& CheckComp : RandomMovementComps)
         {
             URandomMovementComponent* CheckRandomMovementComp = Cast<URandomMovementComponent>(CheckComp);
@@ -46,7 +46,7 @@ void ANVSceneMarker_Volume::OnObserverRemoved(AActor* NewObserver)
 {
     if (NewObserver)
     {
-        TArray<UActorComponent*> RandomMovementComps = NewObserver->GetComponentsByClass(URandomMovementComponent::StaticClass());
+        TArray<UActorComponent*> RandomMovementComps = NewObserver->K2_GetComponentsByClass(URandomMovementComponent::StaticClass());
         for (auto& CheckComp : RandomMovementComps)
         {
             URandomMovementComponent* CheckRandomMovementComp = Cast<URandomMovementComponent>(CheckComp);

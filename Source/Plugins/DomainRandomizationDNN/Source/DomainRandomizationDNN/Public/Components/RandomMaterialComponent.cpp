@@ -4,11 +4,18 @@
 * International License.  (https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode)
 */
 
-#include "DomainRandomizationDNNPCH.h"
+#include "RandomMaterialComponent.h"   // IWYU: own header first
+#include "DomainRandomizationDNNPCH.h" // optional: precompiled header if you use one
+
 #include "Components/MeshComponent.h"
 #include "Components/DecalComponent.h"
+#include "Materials/MaterialInterface.h"
+#include "UObject/UnrealType.h" // for FProperty
+#include "Engine/World.h"
+#include "Math/UnrealMathUtility.h"
 #include "RandomMaterialParameterComponentBase.h"
-#include "RandomMaterialComponent.h"
+#include "DRUtils.h" // ensure this exists for DRUtils::GetValidChildMeshComponents
+#include "Logging/LogMacros.h"
 
 // Sets default values
 URandomMaterialComponent::URandomMaterialComponent()
@@ -20,17 +27,17 @@ URandomMaterialComponent::URandomMaterialComponent()
 
 void URandomMaterialComponent::BeginPlay()
 {
-    AActor* OwnerActor = GetOwner();
+    AActor *OwnerActor = GetOwner();
     if (OwnerActor)
     {
         OwnerMeshComponents = DRUtils::GetValidChildMeshComponents(OwnerActor);
 
-        TArray<UActorComponent*> ChildDecalComps = OwnerActor->GetComponentsByClass(UDecalComponent::StaticClass());
+        TArray<UActorComponent *> ChildDecalComps = OwnerActor->K2_GetComponentsByClass(UDecalComponent::StaticClass());
         OwnerDecalComponents.Reset();
-        for (UActorComponent* CheckComp : ChildDecalComps)
+
+        for (UActorComponent *CheckComp : ChildDecalComps)
         {
-            UDecalComponent* CheckDecalComp = Cast<UDecalComponent>(CheckComp);
-            if (CheckDecalComp)
+            if (UDecalComponent *CheckDecalComp = Cast<UDecalComponent>(CheckComp))
             {
                 OwnerDecalComponents.Add(CheckDecalComp);
             }
@@ -65,69 +72,70 @@ void URandomMaterialComponent::OnRandomization_Implementation()
         return;
     }
 
-    const bool bAffectMeshComponents = (AffectedComponentType == EAffectedMaterialOwnerComponentType::OnlyAffectMeshComponents) ||
-                                       (AffectedComponentType == EAffectedMaterialOwnerComponentType::AffectBothMeshAndDecalComponents);
-    const bool bAffectDecalComponents = (AffectedComponentType == EAffectedMaterialOwnerComponentType::OnlyAffectDecalComponents) ||
-                                        (AffectedComponentType == EAffectedMaterialOwnerComponentType::AffectBothMeshAndDecalComponents);
+    const bool bAffectMeshComponents =
+        (AffectedComponentType == EAffectedMaterialOwnerComponentType::OnlyAffectMeshComponents) ||
+        (AffectedComponentType == EAffectedMaterialOwnerComponentType::AffectBothMeshAndDecalComponents);
+
+    const bool bAffectDecalComponents =
+        (AffectedComponentType == EAffectedMaterialOwnerComponentType::OnlyAffectDecalComponents) ||
+        (AffectedComponentType == EAffectedMaterialOwnerComponentType::AffectBothMeshAndDecalComponents);
 
     bool bActorMaterialChanged = false;
 
     // Update the owner's mesh components list if it's not initialized
     if (OwnerMeshComponents.Num() == 0)
     {
-        AActor* OwnerActor = GetOwner();
-        if (OwnerActor)
+        if (AActor *OwnerActor = GetOwner())
         {
             OwnerMeshComponents = DRUtils::GetValidChildMeshComponents(OwnerActor);
         }
     }
 
-    if (bAffectMeshComponents && (OwnerMeshComponents.Num() > 0))
+    // ✅ Affect mesh components
+    if (bAffectMeshComponents && OwnerMeshComponents.Num() > 0)
     {
-        // TODO: Add option to use the same material to all the material slots or not
-        for (UMeshComponent* CheckMeshComp : OwnerMeshComponents)
+        for (UMeshComponent *CheckMeshComp : OwnerMeshComponents)
         {
-            if (CheckMeshComp)
+            if (!CheckMeshComp)
+                continue;
+
+            if (UMaterialInterface *NewMaterial = GetNextMaterial())
             {
-                UMaterialInterface* NewMaterial = GetNextMaterial();
-                if (NewMaterial)
+                const TArray<int32> AffectedMaterialIndexes = MaterialSelectionConfigData.GetAffectMaterialIndexes(CheckMeshComp);
+                for (const int32 MaterialIndex : AffectedMaterialIndexes)
                 {
-                    const TArray<int32> AffectedMaterialIndexes = MaterialSelectionConfigData.GetAffectMaterialIndexes(CheckMeshComp);
-                    for (const int32 MaterialIndex : AffectedMaterialIndexes)
-                    {
-                        CheckMeshComp->SetMaterial(MaterialIndex, NewMaterial);
-                    }
-                    bActorMaterialChanged = true;
+                    CheckMeshComp->SetMaterial(MaterialIndex, NewMaterial);
                 }
+                bActorMaterialChanged = true;
             }
         }
     }
 
-    if (bAffectDecalComponents && (OwnerDecalComponents.Num() > 0))
+    // ✅ Affect decal components
+    if (bAffectDecalComponents && OwnerDecalComponents.Num() > 0)
     {
-        for (UDecalComponent* CheckDecalComp : OwnerDecalComponents)
+        for (UDecalComponent *CheckDecalComp : OwnerDecalComponents)
         {
-            if (CheckDecalComp)
+            if (!CheckDecalComp)
+                continue;
+
+            if (UMaterialInterface *NewMaterial = GetNextMaterial())
             {
-                UMaterialInterface* NewMaterial = GetNextMaterial();
-                if (NewMaterial)
-                {
-                    CheckDecalComp->SetDecalMaterial(NewMaterial);
-                    bActorMaterialChanged = true;
-                }
+                CheckDecalComp->SetDecalMaterial(NewMaterial);
+                bActorMaterialChanged = true;
             }
         }
     }
 
+    // ✅ Notify other randomizers
     if (bActorMaterialChanged)
     {
-        // Make sure to update other components that want to change the material's parameteres like color, texture ...
-        AActor* OwnerActor = GetOwner();
-        if (OwnerActor)
+        if (AActor *OwnerActor = GetOwner())
         {
-            TArray<URandomMaterialParameterComponentBase*> RandMatParamCompList;
+            TArray<URandomMaterialParameterComponentBase *> RandMatParamCompList;
             OwnerActor->GetComponents(RandMatParamCompList);
-            for (auto RandMatParamComp : RandMatParamCompList)
+
+            for (URandomMaterialParameterComponentBase *RandMatParamComp : RandMatParamCompList)
             {
                 if (RandMatParamComp && RandMatParamComp->ShouldRandomize())
                 {
@@ -138,10 +146,10 @@ void URandomMaterialComponent::OnRandomization_Implementation()
     }
 }
 
-#if WITH_EDITORONLY_DATA
-void URandomMaterialComponent::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent)
+#if WITH_EDITOR
+void URandomMaterialComponent::PostEditChangeProperty(FPropertyChangedEvent &PropertyChangedEvent)
 {
-    const UProperty* PropertyThatChanged = PropertyChangedEvent.MemberProperty;
+    FProperty *PropertyThatChanged = PropertyChangedEvent.MemberProperty;
     if (PropertyThatChanged)
     {
         const FName ChangedPropName = PropertyThatChanged->GetFName();
@@ -154,32 +162,35 @@ void URandomMaterialComponent::PostEditChangeProperty(struct FPropertyChangedEve
         Super::PostEditChangeProperty(PropertyChangedEvent);
     }
 }
-#endif //WITH_EDITORONLY_DATA
+#endif // WITH_EDITOR
+
 bool URandomMaterialComponent::HasMaterialToRandomize() const
 {
-#if WITH_EDITORONLY_DATA
+#if WITH_EDITOR
     return bUseAllMaterialInDirectories ? MaterialStreamer.HasAssets() : (MaterialList.Num() > 0);
 #else
     return false;
-#endif //WITH_EDITORONLY_DATA
+#endif
 }
 
-
-class UMaterialInterface* URandomMaterialComponent::GetNextMaterial()
+UMaterialInterface *URandomMaterialComponent::GetNextMaterial()
 {
-#if WITH_EDITORONLY_DATA
+#if WITH_EDITOR
     // Choose a random material in the list
-    UMaterialInterface* NewMaterial = nullptr;
+    UMaterialInterface *NewMaterial = nullptr;
+
     if (bUseAllMaterialInDirectories)
     {
         NewMaterial = MaterialStreamer.GetNextAsset<UMaterialInterface>();
     }
     else if (MaterialList.Num() > 0)
     {
-        NewMaterial = MaterialList[FMath::Rand() % MaterialList.Num()];
+        const int32 RandomIndex = FMath::Rand() % MaterialList.Num();
+        NewMaterial = MaterialList[RandomIndex];
     }
+
     return NewMaterial;
 #else
     return nullptr;
-#endif //WITH_EDITORONLY_DATA
+#endif
 }

@@ -4,8 +4,10 @@
 * International License.  (https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode)
 */
 
-#include "DomainRandomizationDNNPCH.h"
-#include "RandomMaterialParam_ColorComponent.h"
+#include "RandomMaterialParam_ColorComponent.h" // own header first
+#include "DomainRandomizationDNNPCH.h"          // (optional PCH include)
+#include "Materials/MaterialInstanceDynamic.h"
+#include "UObject/UnrealType.h" // FProperty (UE5 editor reflection)
 
 // Sets default values
 URandomMaterialParam_ColorComponent::URandomMaterialParam_ColorComponent()
@@ -18,29 +20,31 @@ void URandomMaterialParam_ColorComponent::PostLoad()
     Super::PostLoad();
 
     // Maintain old data which still use the deprecated property ColorParameterName
-    if ((MaterialParameterNames.Num() == 0) && !ColorParameterName.IsNone())
+    if (MaterialParameterNames.Num() == 0 && !ColorParameterName.IsNone())
     {
         MaterialParameterNames.Add(ColorParameterName);
     }
 }
 
-void URandomMaterialParam_ColorComponent::UpdateMaterial(UMaterialInstanceDynamic* MaterialToMofidy)
+void URandomMaterialParam_ColorComponent::UpdateMaterial(UMaterialInstanceDynamic *MaterialToModify)
 {
-    if (MaterialToMofidy)
+    if (!MaterialToModify)
     {
-        for (const FName& ParamName : MaterialParameterNames)
-        {
-            // TODO: Add option to use the same color for all the parameters or not
-            FLinearColor RandomColor = ColorData.GetRandomColor();
-            MaterialToMofidy->SetVectorParameterValue(ParamName, RandomColor);
-        }
+        return;
+    }
+
+    for (const FName &ParamName : MaterialParameterNames)
+    {
+        // TODO: Add option to use the same color for all parameters or not
+        const FLinearColor RandomColor = ColorData.GetRandomColor();
+        MaterialToModify->SetVectorParameterValue(ParamName, RandomColor);
     }
 }
 
-#if WITH_EDITORONLY_DATA
-void URandomMaterialParam_ColorComponent::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent)
+#if WITH_EDITOR
+void URandomMaterialParam_ColorComponent::PostEditChangeProperty(FPropertyChangedEvent &PropertyChangedEvent)
 {
-    const UProperty* PropertyThatChanged = PropertyChangedEvent.MemberProperty;
+    FProperty *PropertyThatChanged = PropertyChangedEvent.MemberProperty;
     if (PropertyThatChanged)
     {
         const FName ChangedPropName = PropertyThatChanged->GetFName();
@@ -53,4 +57,4 @@ void URandomMaterialParam_ColorComponent::PostEditChangeProperty(struct FPropert
         Super::PostEditChangeProperty(PropertyChangedEvent);
     }
 }
-#endif //WITH_EDITORONLY_DATA
+#endif // WITH_EDITOR

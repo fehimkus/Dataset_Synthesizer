@@ -103,8 +103,8 @@ protected: // Transient
 
 protected:
     // List of the proxy meshes used to show where actors should be on the level
-    TArray<class UStaticMeshComponent*> ProxyMeshComponents;
-
+    TArray<TObjectPtr<UStaticMeshComponent>> ProxyMeshComponents;
+    
     void UpdateProxyMeshes();
     void UpdateProxyMeshesVisibility();
     void DestroyManagedActors();

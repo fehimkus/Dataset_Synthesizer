@@ -9,6 +9,7 @@
 #include "DomainRandomizationDNNPCH.h"
 #include "RandomComponentBase.h"
 #include "DRUtils.h"
+#include "UObject/UnrealType.h" // FProperty and friends (UE5 reflection)
 #include "RandomLightComponent.generated.h"
 
 /**

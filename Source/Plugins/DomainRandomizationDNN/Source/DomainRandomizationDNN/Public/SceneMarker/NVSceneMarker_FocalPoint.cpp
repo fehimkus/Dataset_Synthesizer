@@ -39,7 +39,7 @@ void ANVSceneMarker_FocalPoint::OnObserverAdded(AActor* NewObserver)
     {
         if (bUseOrbitalMovement)
         {
-            TArray<UActorComponent*> OrbitalMovementComps = NewObserver->GetComponentsByClass(UOrbitalMovementComponent::StaticClass());
+            TArray<UActorComponent*> OrbitalMovementComps = NewObserver->K2_GetComponentsByClass(UOrbitalMovementComponent::StaticClass());
             for (auto& CheckComp : OrbitalMovementComps)
             {
                 UOrbitalMovementComponent* CheckOrbitalMovementComp = Cast<UOrbitalMovementComponent>(CheckComp);
@@ -64,7 +64,7 @@ void ANVSceneMarker_FocalPoint::OnObserverRemoved(AActor* NewObserver)
     {
         if (bUseOrbitalMovement)
         {
-            TArray<UActorComponent*> OrbitalMovementComps = NewObserver->GetComponentsByClass(UOrbitalMovementComponent::StaticClass());
+            TArray<UActorComponent*> OrbitalMovementComps = NewObserver->K2_GetComponentsByClass(UOrbitalMovementComponent::StaticClass());
             for (auto& CheckComp : OrbitalMovementComps)
             {
                 UOrbitalMovementComponent* CheckOrbitalMovementComp = Cast<UOrbitalMovementComponent>(CheckComp);

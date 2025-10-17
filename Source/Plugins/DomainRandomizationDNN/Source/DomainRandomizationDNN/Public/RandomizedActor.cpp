@@ -5,12 +5,12 @@
 */
 
 #include "DomainRandomizationDNNPCH.h"
-#include "RandomMeshComponent.h"
-#include "RandomMaterialComponent.h"
-#include "RandomVisibilityComponent.h"
-#include "RandomMaterialParam_ColorComponent.h"
-#include "RandomMovementComponent.h"
-#include "RandomRotationComponent.h"
+#include "Components/RandomMeshComponent.h"
+#include "Components/RandomMaterialComponent.h"
+#include "Components/RandomVisibilityComponent.h"
+#include "Components/RandomMaterialParam_ColorComponent.h"
+#include "Components/RandomMovementComponent.h"
+#include "Components/RandomRotationComponent.h"
 #include "RandomizedActor.h"
 #include "RandomDataObject.h"
 

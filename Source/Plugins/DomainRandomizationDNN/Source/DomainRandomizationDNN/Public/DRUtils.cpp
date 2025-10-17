@@ -7,6 +7,8 @@
 #include "DomainRandomizationDNNPCH.h"
 #include "DRUtils.h"
 #include "Engine/AssetManager.h"
+#include "UObject/UnrealType.h"
+
 #if WITH_EDITORONLY_DATA
 #include "AssetRegistryModule.h"
 #endif // WITH_EDITORONLY_DATA
@@ -171,7 +173,7 @@ FRandomColorData::FRandomColorData()
 #if WITH_EDITORONLY_DATA
 void FRandomColorData::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent)
 {
-    const UProperty* PropertyThatChanged = PropertyChangedEvent.MemberProperty;
+    const FProperty* PropertyThatChanged = PropertyChangedEvent.MemberProperty;
     if (PropertyThatChanged)
     {
         switch (RandomizationType)
@@ -347,7 +349,7 @@ FRandomMaterialSelection::FRandomMaterialSelection()
 #if WITH_EDITORONLY_DATA
 void FRandomMaterialSelection::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent)
 {
-    const UProperty* PropertyThatChanged = PropertyChangedEvent.MemberProperty;
+    const FProperty* PropertyThatChanged = PropertyChangedEvent.MemberProperty;
     if (PropertyThatChanged)
     {
         switch (MaterialSelectionType)
@@ -408,9 +410,10 @@ TArray<int32> FRandomMaterialSelection::GetAffectMaterialIndexes(const class UMe
                 const UStaticMesh* StaticMesh = StaticMeshComp->GetStaticMesh();
                 if (StaticMesh)
                 {
-                    for (int i = 0; i < StaticMesh->StaticMaterials.Num(); i++)
+                    const int32 NumMaterials = StaticMesh->GetStaticMaterials().Num();
+                    for (int32 i = 0; i < NumMaterials; i++)
                     {
-                        const FStaticMaterial& StaticMaterial = StaticMesh->StaticMaterials[i];
+                        const FStaticMaterial &StaticMaterial = StaticMesh->GetStaticMaterials()[i];
                         if (MaterialSlotNames.Contains(StaticMaterial.MaterialSlotName))
                         {
                             AffectMaterialIndexes.Add(i);
@@ -420,13 +423,14 @@ TArray<int32> FRandomMaterialSelection::GetAffectMaterialIndexes(const class UMe
             }
             else
             {
-                const USkeletalMeshComponent* SkeletalMeshComp = Cast<USkeletalMeshComponent>(MeshComp);
-                const USkeletalMesh* SkeletalMesh = SkeletalMeshComp ? SkeletalMeshComp->SkeletalMesh : nullptr;
+                const USkeletalMeshComponent *SkeletalMeshComp = Cast<USkeletalMeshComponent>(MeshComp);
+                const USkeletalMesh *SkeletalMesh = SkeletalMeshComp ? SkeletalMeshComp->GetSkeletalMeshAsset() : nullptr;
                 if (SkeletalMesh)
                 {
-                    for (int i = 0; i < SkeletalMesh->Materials.Num(); i++)
+                    const TArray<FSkeletalMaterial> &SkeletalMats = SkeletalMesh->GetMaterials(); // ✅ use accessor
+                    for (int32 i = 0; i < SkeletalMats.Num(); i++)
                     {
-                        const FSkeletalMaterial& SkeletalMaterial = SkeletalMesh->Materials[i];
+                        const FSkeletalMaterial &SkeletalMaterial = SkeletalMats[i];
                         if (MaterialSlotNames.Contains(SkeletalMaterial.MaterialSlotName))
                         {
                             AffectMaterialIndexes.Add(i);
@@ -593,7 +597,7 @@ bool FRandomAssetStreamer::HasAssets() const
 
 FSoftObjectPath FRandomAssetStreamer::GetNextAssetReference()
 {
-    FStringAssetReference NextAssetRef;
+    FSoftObjectPath NextAssetRef;
     const uint32 TotalLoadedAssetCount = LoadedAssetReferences.Num();
     if (TotalLoadedAssetCount > 0)
     {
@@ -700,24 +704,25 @@ void FRandomAssetStreamer::OnAssetBatchLoaded()
 //=================================== Misc ===================================
 namespace DRUtils
 {
-    UMeshComponent* GetFirstValidMeshComponent(AActor* OwnerActor)
+    UMeshComponent *GetFirstValidMeshComponent(AActor *OwnerActor)
     {
-        UMeshComponent* FoundMeshComp = nullptr;
+        UMeshComponent *FoundMeshComp = nullptr;
         if (!OwnerActor)
         {
             return FoundMeshComp;
         }
 
-        TArray<UActorComponent*> ChildMeshComps = OwnerActor->GetComponentsByClass(UMeshComponent::StaticClass());
-        for (UActorComponent* CheckComp : ChildMeshComps)
+        TArray<UActorComponent *> ChildMeshComps = OwnerActor->K2_GetComponentsByClass(UMeshComponent::StaticClass());
+        for (UActorComponent *CheckComp : ChildMeshComps)
         {
-            UMeshComponent* CheckMeshComp = Cast<UMeshComponent>(CheckComp);
+            UMeshComponent *CheckMeshComp = Cast<UMeshComponent>(CheckComp);
             if (CheckMeshComp)
             {
-                USkinnedMeshComponent* SkinnedMeshComp = Cast<USkeletalMeshComponent>(CheckMeshComp);
+                USkeletalMeshComponent *SkinnedMeshComp = Cast<USkeletalMeshComponent>(CheckMeshComp);
                 if (SkinnedMeshComp)
                 {
-                    if (SkinnedMeshComp->SkeletalMesh)
+                    // ✅ UE5 replacement for deprecated SkeletalMesh member
+                    if (SkinnedMeshComp->GetSkeletalMeshAsset())
                     {
                         FoundMeshComp = SkinnedMeshComp;
                         break;
@@ -725,7 +730,7 @@ namespace DRUtils
                 }
                 else
                 {
-                    UStaticMeshComponent* StaticMeshComp = Cast<UStaticMeshComponent>(CheckMeshComp);
+                    UStaticMeshComponent *StaticMeshComp = Cast<UStaticMeshComponent>(CheckMeshComp);
                     if (StaticMeshComp && StaticMeshComp->GetStaticMesh())
                     {
                         FoundMeshComp = StaticMeshComp;
@@ -738,9 +743,9 @@ namespace DRUtils
         return FoundMeshComp;
     }
 
-    extern TArray<UMeshComponent*> GetValidChildMeshComponents(AActor* OwnerActor)
+    extern TArray<UMeshComponent *> GetValidChildMeshComponents(AActor *OwnerActor)
     {
-        TArray<UMeshComponent*> ValidMeshComps;
+        TArray<UMeshComponent *> ValidMeshComps;
         ValidMeshComps.Reset();
 
         if (!OwnerActor)
@@ -748,23 +753,24 @@ namespace DRUtils
             return ValidMeshComps;
         }
 
-        TArray<UActorComponent*> ChildMeshComps = OwnerActor->GetComponentsByClass(UMeshComponent::StaticClass());
-        for (UActorComponent* CheckComp : ChildMeshComps)
+        TArray<UActorComponent *> ChildMeshComps = OwnerActor->K2_GetComponentsByClass(UMeshComponent::StaticClass());
+        for (UActorComponent *CheckComp : ChildMeshComps)
         {
-            UMeshComponent* CheckMeshComp = Cast<UMeshComponent>(CheckComp);
+            UMeshComponent *CheckMeshComp = Cast<UMeshComponent>(CheckComp);
             if (CheckMeshComp)
             {
-                USkinnedMeshComponent* SkinnedMeshComp = Cast<USkeletalMeshComponent>(CheckMeshComp);
+                USkeletalMeshComponent *SkinnedMeshComp = Cast<USkeletalMeshComponent>(CheckMeshComp);
                 if (SkinnedMeshComp)
                 {
-                    if (SkinnedMeshComp->SkeletalMesh)
+                    // ✅ UE5 replacement for deprecated SkinnedMeshComp->SkeletalMesh
+                    if (SkinnedMeshComp->GetSkeletalMeshAsset())
                     {
                         ValidMeshComps.Add(SkinnedMeshComp);
                     }
                 }
                 else
                 {
-                    UStaticMeshComponent* StaticMeshComp = Cast<UStaticMeshComponent>(CheckMeshComp);
+                    UStaticMeshComponent *StaticMeshComp = Cast<UStaticMeshComponent>(CheckMeshComp);
                     if (StaticMeshComp && StaticMeshComp->GetStaticMesh())
                     {
                         ValidMeshComps.Add(StaticMeshComp);

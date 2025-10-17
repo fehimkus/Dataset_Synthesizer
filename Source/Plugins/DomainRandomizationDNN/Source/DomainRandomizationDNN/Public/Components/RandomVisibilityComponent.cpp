@@ -4,8 +4,9 @@
 * International License.  (https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode)
 */
 
-#include "DomainRandomizationDNNPCH.h"
-#include "RandomVisibilityComponent.h"
+#include "RandomVisibilityComponent.h" // IWYU: own header first
+#include "DomainRandomizationDNNPCH.h" // optional, if your module uses PCH
+#include "GameFramework/Actor.h"
 
 // Sets default values
 URandomVisibilityComponent::URandomVisibilityComponent()
@@ -14,12 +15,16 @@ URandomVisibilityComponent::URandomVisibilityComponent()
 
 void URandomVisibilityComponent::OnRandomization_Implementation()
 {
-    AActor* OwnerActor = GetOwner();
-    if (OwnerActor)
+    AActor *OwnerActor = GetOwner();
+    if (!OwnerActor)
     {
-        bool bNewHidden = !OwnerActor->bHidden;
-
-        OwnerActor->SetActorHiddenInGame(bNewHidden);
-        OwnerActor->SetActorEnableCollision(!bNewHidden);
+        return;
     }
+
+    // ✅ Use public accessor instead of private bHidden
+    const bool bCurrentlyHidden = OwnerActor->IsHidden();
+    const bool bNewHidden = !bCurrentlyHidden;
+
+    OwnerActor->SetActorHiddenInGame(bNewHidden);
+    OwnerActor->SetActorEnableCollision(!bNewHidden);
 }

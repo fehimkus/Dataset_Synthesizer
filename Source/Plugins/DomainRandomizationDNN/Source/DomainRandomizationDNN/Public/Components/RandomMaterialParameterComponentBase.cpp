@@ -4,10 +4,16 @@
 * International License.  (https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode)
 */
 
-#include "DomainRandomizationDNNPCH.h"
+#include "RandomMaterialParameterComponentBase.h" // Own header first
+#include "DomainRandomizationDNNPCH.h"            // If your module uses a PCH
+
 #include "Components/MeshComponent.h"
 #include "Components/DecalComponent.h"
-#include "RandomMaterialParameterComponentBase.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/MaterialInterface.h"
+#include "UObject/UnrealType.h" // FProperty (UE5)
+#include "Engine/World.h"
+#include "DRUtils.h" // DRUtils::GetValidChildMeshComponents
 
 // Sets default values
 URandomMaterialParameterComponentBase::URandomMaterialParameterComponentBase()
@@ -19,17 +25,18 @@ URandomMaterialParameterComponentBase::URandomMaterialParameterComponentBase()
 
 void URandomMaterialParameterComponentBase::BeginPlay()
 {
-    AActor* OwnerActor = GetOwner();
+    AActor *OwnerActor = GetOwner();
     if (OwnerActor)
     {
         OwnerMeshComponents = DRUtils::GetValidChildMeshComponents(OwnerActor);
 
-        TArray<UActorComponent*> ChildDecalComps = OwnerActor->GetComponentsByClass(UDecalComponent::StaticClass());
+        // C++ API: use GetComponentsByClass (K2_* is BP-only)
+        TArray<UActorComponent *> ChildDecalComps = OwnerActor->K2_GetComponentsByClass(UDecalComponent::StaticClass());
         OwnerDecalComponents.Reset();
-        for (UActorComponent* CheckComp : ChildDecalComps)
+
+        for (UActorComponent *CheckComp : ChildDecalComps)
         {
-            UDecalComponent* CheckDecalComp = Cast<UDecalComponent>(CheckComp);
-            if (CheckDecalComp)
+            if (UDecalComponent *CheckDecalComp = Cast<UDecalComponent>(CheckComp))
             {
                 OwnerDecalComponents.Add(CheckDecalComp);
             }
@@ -41,14 +48,17 @@ void URandomMaterialParameterComponentBase::BeginPlay()
 
 void URandomMaterialParameterComponentBase::OnRandomization_Implementation()
 {
-    const bool bAffectMeshComponents = (AffectedComponentType == EAffectedMaterialOwnerComponentType::OnlyAffectMeshComponents) ||
-                                       (AffectedComponentType == EAffectedMaterialOwnerComponentType::AffectBothMeshAndDecalComponents);
-    const bool bAffectDecalComponents = (AffectedComponentType == EAffectedMaterialOwnerComponentType::OnlyAffectDecalComponents) ||
-                                        (AffectedComponentType == EAffectedMaterialOwnerComponentType::AffectBothMeshAndDecalComponents);
+    const bool bAffectMeshComponents =
+        (AffectedComponentType == EAffectedMaterialOwnerComponentType::OnlyAffectMeshComponents) ||
+        (AffectedComponentType == EAffectedMaterialOwnerComponentType::AffectBothMeshAndDecalComponents);
 
-    if (bAffectMeshComponents && (OwnerMeshComponents.Num() > 0))
+    const bool bAffectDecalComponents =
+        (AffectedComponentType == EAffectedMaterialOwnerComponentType::OnlyAffectDecalComponents) ||
+        (AffectedComponentType == EAffectedMaterialOwnerComponentType::AffectBothMeshAndDecalComponents);
+
+    if (bAffectMeshComponents && OwnerMeshComponents.Num() > 0)
     {
-        for (UMeshComponent* CheckMeshComp : OwnerMeshComponents)
+        for (UMeshComponent *CheckMeshComp : OwnerMeshComponents)
         {
             if (CheckMeshComp)
             {
@@ -57,9 +67,9 @@ void URandomMaterialParameterComponentBase::OnRandomization_Implementation()
         }
     }
 
-    if (bAffectDecalComponents && (OwnerDecalComponents.Num() > 0))
+    if (bAffectDecalComponents && OwnerDecalComponents.Num() > 0)
     {
-        for (UDecalComponent* CheckDecalComp : OwnerDecalComponents)
+        for (UDecalComponent *CheckDecalComp : OwnerDecalComponents)
         {
             if (CheckDecalComp)
             {
@@ -69,50 +79,57 @@ void URandomMaterialParameterComponentBase::OnRandomization_Implementation()
     }
 }
 
-void URandomMaterialParameterComponentBase::UpdateMeshMaterial(class UMeshComponent* AffectedMeshComp)
+void URandomMaterialParameterComponentBase::UpdateMeshMaterial(UMeshComponent *AffectedMeshComp)
 {
-    for (UMeshComponent* CheckMeshComp : OwnerMeshComponents)
+    // Keep original behavior (iterate owner’s cached mesh comps),
+    // but you could narrow to AffectedMeshComp if desired.
+    for (UMeshComponent *CheckMeshComp : OwnerMeshComponents)
     {
-        if (CheckMeshComp)
+        if (!CheckMeshComp)
         {
-            const TArray<int32> AffectedMaterialIndexes = MaterialSelectionConfigData.GetAffectMaterialIndexes(CheckMeshComp);
-            for (const int32 MaterialIndex : AffectedMaterialIndexes)
+            continue;
+        }
+
+        const TArray<int32> AffectedMaterialIndexes = MaterialSelectionConfigData.GetAffectMaterialIndexes(CheckMeshComp);
+        for (const int32 MaterialIndex : AffectedMaterialIndexes)
+        {
+            if (UMaterialInstanceDynamic *MID = CheckMeshComp->CreateDynamicMaterialInstance(MaterialIndex))
             {
-                UMaterialInstanceDynamic* MeshMaterialInstance = CheckMeshComp->CreateDynamicMaterialInstance(MaterialIndex);
-                if (MeshMaterialInstance)
-                {
-                    UpdateMaterial(MeshMaterialInstance);
-                }
+                UpdateMaterial(MID);
             }
         }
     }
 }
 
-void URandomMaterialParameterComponentBase::UpdateDecalMaterial(class UDecalComponent* AffectedDecalComp)
+void URandomMaterialParameterComponentBase::UpdateDecalMaterial(UDecalComponent *AffectedDecalComp)
 {
-    for (UDecalComponent* CheckDecalComp : OwnerDecalComponents)
+    // Keep original behavior (iterate owner’s cached decal comps),
+    // but you could narrow to AffectedDecalComp if desired.
+    for (UDecalComponent *CheckDecalComp : OwnerDecalComponents)
     {
-        if (CheckDecalComp)
+        if (!CheckDecalComp)
         {
-            UMaterialInterface* CurrentDecalMaterial = CheckDecalComp->GetDecalMaterial();
-            UMaterialInstanceDynamic* DecalMaterialInstance = Cast<UMaterialInstanceDynamic>(CurrentDecalMaterial);
-            if (!DecalMaterialInstance)
-            {
-                DecalMaterialInstance = CheckDecalComp->CreateDynamicMaterialInstance();
-            }
+            continue;
+        }
 
-            if (DecalMaterialInstance)
-            {
-                UpdateMaterial(DecalMaterialInstance);
-            }
+        UMaterialInterface *CurrentDecalMaterial = CheckDecalComp->GetDecalMaterial();
+        UMaterialInstanceDynamic *DecalMaterialInstance = Cast<UMaterialInstanceDynamic>(CurrentDecalMaterial);
+        if (!DecalMaterialInstance)
+        {
+            DecalMaterialInstance = CheckDecalComp->CreateDynamicMaterialInstance();
+        }
+
+        if (DecalMaterialInstance)
+        {
+            UpdateMaterial(DecalMaterialInstance);
         }
     }
 }
 
-#if WITH_EDITORONLY_DATA
-void URandomMaterialParameterComponentBase::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent)
+#if WITH_EDITOR
+void URandomMaterialParameterComponentBase::PostEditChangeProperty(FPropertyChangedEvent &PropertyChangedEvent)
 {
-    const UProperty* PropertyThatChanged = PropertyChangedEvent.MemberProperty;
+    FProperty *PropertyThatChanged = PropertyChangedEvent.MemberProperty;
     if (PropertyThatChanged)
     {
         const FName ChangedPropName = PropertyThatChanged->GetFName();
@@ -125,4 +142,4 @@ void URandomMaterialParameterComponentBase::PostEditChangeProperty(struct FPrope
 
     Super::PostEditChangeProperty(PropertyChangedEvent);
 }
-#endif //WITH_EDITORONLY_DATA
+#endif // WITH_EDITOR

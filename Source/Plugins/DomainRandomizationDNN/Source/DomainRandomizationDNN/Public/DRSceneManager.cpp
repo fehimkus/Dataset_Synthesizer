@@ -11,11 +11,19 @@
 #include "NVSceneMarker.h"
 #include "NVSceneCapturerActor.h"
 #include "OrbitalMovementComponent.h"
-#include "RandomMovementComponent.h"
+#include "Components/RandomMovementComponent.h"
 
-#include "Engine.h"
+// Modern UE includes
+#include "Engine/World.h"
+#include "Engine/StaticMesh.h"
+#include "UObject/ConstructorHelpers.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
+#include "UObject/SoftObjectPath.h"
+#include "UObject/Package.h"
 
-ADRSceneManager::ADRSceneManager(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
+ADRSceneManager::ADRSceneManager(const FObjectInitializer &ObjectInitializer)
+    : Super(ObjectInitializer)
 {
     PrimaryActorTick.bCanEverTick = true;
     PrimaryActorTick.TickGroup = TG_PrePhysics;
@@ -47,7 +55,7 @@ void ADRSceneManager::UpdateSettingsFromCommandLine()
         return;
     }
 
-    const auto CommandLine = FCommandLine::Get();
+    const TCHAR *CommandLine = FCommandLine::Get();
 
     int32 CountPerActorOverride = 0;
     if (FParse::Value(CommandLine, TEXT("-CountPerActor="), CountPerActorOverride))
@@ -60,72 +68,82 @@ void ADRSceneManager::UpdateSettingsFromCommandLine()
     {
         GroupActorManager->TotalNumberOfActorsToSpawn.Min = TotalNumberOfActorsToSpawn_MinOverride;
     }
+
     int32 TotalNumberOfActorsToSpawn_MaxOverride = 0;
     if (FParse::Value(CommandLine, TEXT("-TotalNumberOfActorsToSpawn_Max="), TotalNumberOfActorsToSpawn_MaxOverride))
     {
         GroupActorManager->TotalNumberOfActorsToSpawn.Max = TotalNumberOfActorsToSpawn_MaxOverride;
     }
 
-    FString TrainingActorClassesOverride = TEXT("");
+    FString TrainingActorClassesOverride;
     if (FParse::Value(CommandLine, TEXT("-TrainingActorClasses="), TrainingActorClassesOverride))
     {
-        FString RemainderStr;
-
         GroupActorManager->ActorClassesToSpawn.Reset();
 
         TArray<FString> ActorClassNames;
         TrainingActorClassesOverride.ParseIntoArray(ActorClassNames, TEXT(","));
-        for (const FString& ActorClassName : ActorClassNames)
+
+        for (const FString &ActorClassName : ActorClassNames)
         {
-            FString StrippedActorClassName = ActorClassName;
-            ConstructorHelpers::StripObjectClass(StrippedActorClassName);
-            UClass* ActorClass = FindObject<UClass>(ANY_PACKAGE, *StrippedActorClassName);
+            FString CleanName = ActorClassName;
+            CleanName.TrimStartAndEndInline();
+
+            UClass *ActorClass = FindObject<UClass>(nullptr, *CleanName);
             if (!ActorClass)
             {
-                ActorClass = LoadObject<UClass>(NULL, *ActorClassName);
+                ActorClass = LoadObject<UClass>(nullptr, *CleanName);
             }
+
             if (ActorClass)
             {
                 GroupActorManager->ActorClassesToSpawn.Add(ActorClass);
             }
+            else
+            {
+                UE_LOG(LogTemp, Warning, TEXT("Could not load actor class: %s"), *CleanName);
+            }
         }
     }
 
-    FString TrainingActorMeshesOverride = TEXT("");
+    FString TrainingActorMeshesOverride;
     if (FParse::Value(CommandLine, TEXT("-TrainingActorMeshes="), TrainingActorMeshesOverride))
     {
-        FString MeshPathName;
-        FString RemainderStr;
-
         GroupActorManager->OverrideActorMeshes.Reset();
 
         TArray<FString> MeshNames;
         TrainingActorMeshesOverride.ParseIntoArray(MeshNames, TEXT(","));
-        for (const FString& CheckMeshName : MeshNames)
+
+        for (const FString &MeshPath : MeshNames)
         {
-            FString StrippepMeshName = CheckMeshName;
-            ConstructorHelpers::StripObjectClass(StrippepMeshName);
-            UStaticMesh* MeshRef = FindObject<UStaticMesh>(ANY_PACKAGE, *StrippepMeshName);
+            FString CleanPath = MeshPath;
+            CleanPath.TrimStartAndEndInline();
+
+            UStaticMesh *MeshRef = FindObject<UStaticMesh>(nullptr, *CleanPath);
             if (!MeshRef)
             {
-                MeshRef = LoadObject<UStaticMesh>(NULL, *CheckMeshName);
+                MeshRef = LoadObject<UStaticMesh>(nullptr, *CleanPath);
             }
+
             if (MeshRef)
             {
                 GroupActorManager->OverrideActorMeshes.AddUnique(MeshRef);
+            }
+            else
+            {
+                UE_LOG(LogTemp, Warning, TEXT("Could not load mesh: %s"), *CleanPath);
             }
         }
 
         GroupActorManager->SpawnTemplateActors();
     }
 
-    // TODO: Let the NoiseActorManger parse the command arguments itself?
     if (NoiseActorManager)
     {
         int32 NoiseObjectCountOverride = 0;
         if (FParse::Value(CommandLine, TEXT("-NoiseObjectCount="), NoiseObjectCountOverride))
         {
-            NoiseActorManager->TotalNumberOfActorsToSpawn.Min = NoiseActorManager->TotalNumberOfActorsToSpawn.Max = NoiseObjectCountOverride;
+            NoiseActorManager->TotalNumberOfActorsToSpawn.Min =
+                NoiseActorManager->TotalNumberOfActorsToSpawn.Max = NoiseObjectCountOverride;
         }
     }
 }
@@ -136,7 +154,7 @@ void ADRSceneManager::SetupSceneInternal()
 
     if (CurrentSceneMarker)
     {
-        const FTransform& MarkerTransform = CurrentSceneMarker->GetActorTransform();
+        const FTransform &MarkerTransform = CurrentSceneMarker->GetActorTransform();
         if (GroupActorManager)
         {
             GroupActorManager->SetActorTransform(MarkerTransform);
@@ -150,14 +168,15 @@ void ADRSceneManager::SetupSceneInternal()
 }
 
 #if WITH_EDITORONLY_DATA
-void ADRSceneManager::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent)
+void ADRSceneManager::PostEditChangeProperty(FPropertyChangedEvent &PropertyChangedEvent)
 {
-    const UProperty* PropertyThatChanged = PropertyChangedEvent.MemberProperty;
+    FProperty *PropertyThatChanged = PropertyChangedEvent.MemberProperty;
     if (PropertyThatChanged)
     {
         const FName ChangedPropName = PropertyThatChanged->GetFName();
-        // TODO
-        Super::PostEditChangeProperty(PropertyChangedEvent);
+        UE_LOG(LogTemp, Verbose, TEXT("Property changed: %s"), *ChangedPropName.ToString());
     }
+
+    Super::PostEditChangeProperty(PropertyChangedEvent);
 }
 #endif // WITH_EDITORONLY_DATA
