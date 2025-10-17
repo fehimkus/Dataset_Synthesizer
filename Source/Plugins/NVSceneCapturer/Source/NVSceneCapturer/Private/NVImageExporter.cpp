@@ -9,12 +9,12 @@
 #include "HAL/Runnable.h"
 #include "HAL/RunnableThread.h"
 #include "Async/Async.h"
-#include "FileManager.h"
+#include "HAL/FileManager.h"
 #include "ImageUtils.h"
 #include "IImageWrapperModule.h"
 #if WITH_UNREALPNG
 THIRD_PARTY_INCLUDES_START
-#include "ThirdParty/zlib/zlib-1.2.5/Inc/zlib.h"
+#include "ThirdParty/zlib/1.3/include/zlib.h"
 #include "ThirdParty/libPNG/libPNG-1.5.2/png.h"
 #include "ThirdParty/libPNG/libPNG-1.5.2/pnginfo.h"
 #include <setjmp.h>
@@ -401,14 +401,13 @@ uint32 FNVImageExporter_Thread::Run()
             ExportingImageCounterPtr->Increment();
             auto TempExportingImageCounterPtr = ExportingImageCounterPtr;
             auto TempImageWrapperModule = ImageWrapperModule;
-            Async<void>(AsyncExecution, [TempExportingImageCounterPtr, TempImageWrapperModule, CheckImageData = MoveTemp(TmpImageData)]
-            {
-                FNVImageExporter::ExportImage(TempImageWrapperModule, CheckImageData);
-                if (TempExportingImageCounterPtr.IsValid())
-                {
-                    TempExportingImageCounterPtr->Decrement();
-                }
-            });
+            Async(AsyncExecution, [TempExportingImageCounterPtr, TempImageWrapperModule, CheckImageData = MoveTemp(TmpImageData)]()
+                  {
+                        FNVImageExporter::ExportImage(TempImageWrapperModule, CheckImageData);
+                        if (TempExportingImageCounterPtr.IsValid())
+                        {
+                            TempExportingImageCounterPtr->Decrement();
+                        } });
         }
 
         if (HavePendingImageEvent)

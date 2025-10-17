@@ -31,7 +31,7 @@ FNVTextureReader::~FNVTextureReader()
     SourceTexture = nullptr;
 }
 
-FNVTextureReader& FNVTextureReader::operator=(const FNVTextureReader& OtherReader)
+FNVTextureReader &FNVTextureReader::operator=(const FNVTextureReader &OtherReader)
 {
     SourceTexture = OtherReader.SourceTexture;
     SourceRect = OtherReader.SourceRect;
@@ -41,10 +41,10 @@ FNVTextureReader& FNVTextureReader::operator=(const FNVTextureReader& OtherReade
     return (*this);
 }
 
-void FNVTextureReader::SetSourceTexture(FTexture2DRHIRef NewSourceTexture,
-                                        const FIntRect& NewSourceRect /*= FIntRect()*/,
+void FNVTextureReader::SetSourceTexture(FTextureRHIRef NewSourceTexture,
+                                        const FIntRect &NewSourceRect /*= FIntRect()*/,
                                         EPixelFormat NewReadbackPixelFormat /*= EPixelFormat::PF_Unknown*/,
-                                        const FIntPoint& NewReadbackSize /*= FIntPoint::ZeroValue*/)
+                                        const FIntPoint &NewReadbackSize /*= FIntPoint::ZeroValue*/)
 {
     // SourceTexture can be null by design.
     // so we don't check NewSourceTexture here.
@@ -75,7 +75,7 @@ void FNVTextureReader::SetSourceTexture(FTexture2DRHIRef NewSourceTexture,
                     }
                 }
                 // TODO: Should we ignore non-supported pixel format?
-				// NOTE: Since we read back the pixel in bytes, we need to change the format to be uint mode instead of float
+                // NOTE: Since we read back the pixel in bytes, we need to change the format to be uint mode instead of float
                 if (ReadbackPixelFormat == PF_R32_FLOAT)
                 {
                     ReadbackPixelFormat = PF_R32_UINT;
@@ -91,43 +91,71 @@ void FNVTextureReader::SetSourceTexture(FTexture2DRHIRef NewSourceTexture,
 
 // Read back the pixels data from the current source texture
 // NOTE: This function is sync, the pixels data is returned right away but it may cause the game to hitches since it flush the rendering commands
-bool FNVTextureReader::ReadPixelsData(FNVTexturePixelData& OutPixelsData)
+bool FNVTextureReader::ReadPixelsData(FNVTexturePixelData &OutPixelsData)
 {
     bool bResult = false;
     if (SourceTexture)
     {
         ENQUEUE_RENDER_COMMAND(ReadPixelsFromTexture)(
-            [this, &OutPixelsData = OutPixelsData](FRHICommandListImmediate& RHICmdList)
+            [this, &OutPixelsData](FRHICommandListImmediate &RHICmdList)
             {
-                void* PixelDataBuffer = nullptr;
+                // --- Create a CPU-readable staging texture ---
+                FRHITextureCreateDesc Desc =
+                    FRHITextureCreateDesc::Create2D(TEXT("NVTextureReader_Readback"))
+                        .SetExtent(SourceTexture->GetSizeXY().X, SourceTexture->GetSizeXY().Y)
+                        .SetFormat(SourceTexture->GetFormat())
+                        .SetNumMips(1)
+                        .SetNumSamples(1)
+                        .SetFlags(ETextureCreateFlags::CPUReadback);
+
+                FTextureRHIRef ReadbackTexture = RHICreateTexture(Desc);
+
+                // --- Copy from GPU texture → staging texture ---
+                FRHICopyTextureInfo CopyInfo;
+                CopyInfo.Size = FIntVector(
+                    SourceTexture->GetSizeXY().X,
+                    SourceTexture->GetSizeXY().Y,
+                    1);
+
+                RHICmdList.CopyTexture(SourceTexture, ReadbackTexture, CopyInfo);
+
+                // --- Map the staging texture to CPU memory ---
+                void *PixelDataBuffer = nullptr;
                 FIntPoint PixelSize = FIntPoint::ZeroValue;
-                RHICmdList.MapStagingSurface(SourceTexture, PixelDataBuffer, PixelSize.X, PixelSize.Y);
+                RHICmdList.MapStagingSurface(ReadbackTexture, PixelDataBuffer, PixelSize.X, PixelSize.Y);
 
-                BuildPixelData(OutPixelsData, (uint8*)PixelDataBuffer, ReadbackPixelFormat, PixelSize, ReadbackSize);
+                if (PixelDataBuffer)
+                {
+                    BuildPixelData(OutPixelsData,
+                                   static_cast<uint8 *>(PixelDataBuffer),
+                                   ReadbackPixelFormat,
+                                   PixelSize,
+                                   ReadbackSize);
+                }
 
-                RHICmdList.UnmapStagingSurface(SourceTexture);
+                RHICmdList.UnmapStagingSurface(ReadbackTexture);
             });
 
         FlushRenderingCommands();
         bResult = true;
     }
-    return bResult; 
+    return bResult;
 }
 
 // Read back the pixels data from the current source texture
 // NOTE: This function is sync, the pixels data is returned right away but it may cause the game to hitches since it flush the rendering commands
 bool FNVTextureReader::ReadPixelsData(
-    FNVTexturePixelData& OutPixelsData,
-    const FTexture2DRHIRef& NewSourceTexture,
-    const FIntRect& NewSourceRect /* = FIntRect()*/,
+    FNVTexturePixelData &OutPixelsData,
+    const FTextureRHIRef &NewSourceTexture,
+    const FIntRect &NewSourceRect /* = FIntRect()*/,
     EPixelFormat NewReadbackPixelFormat /*= EPixelFormat::PF_Unknown*/,
-    const FIntPoint& NewReadbackSize /*= FIntPoint::ZeroValue*/)
+    const FIntPoint &NewReadbackSize /*= FIntPoint::ZeroValue*/)
 {
     SetSourceTexture(NewSourceTexture, NewSourceRect, NewReadbackPixelFormat, NewReadbackSize);
     return ReadPixelsData(OutPixelsData);
 }
 
-bool FNVTextureReader::ReadPixelsData(OnFinishedReadingPixelsDataCallback Callback, bool bIgnoreAlpha/*= false*/)
+bool FNVTextureReader::ReadPixelsData(OnFinishedReadingPixelsDataCallback Callback, bool bIgnoreAlpha /*= false*/)
 {
     bool bResult = false;
 
@@ -141,30 +169,30 @@ bool FNVTextureReader::ReadPixelsData(OnFinishedReadingPixelsDataCallback Callba
         if (SourceTexture)
         {
             bResult = ReadPixelsRaw(SourceTexture,
-                SourceRect, ReadbackPixelFormat, ReadbackSize, bIgnoreAlpha,
-                [=](uint8* PixelData, EPixelFormat PixelFormat, FIntPoint PixelSize)
-            {
-                Callback(BuildPixelData(PixelData, PixelFormat, PixelSize, ReadbackSize));
-            });
+                                    SourceRect, ReadbackPixelFormat, ReadbackSize, bIgnoreAlpha,
+                                    [this, Callback](uint8 *PixelData, EPixelFormat PixelFormat, FIntPoint PixelSize)
+                                    {
+                                        Callback(BuildPixelData(PixelData, PixelFormat, PixelSize, ReadbackSize));
+                                    });
         }
     }
     return bResult;
 }
 
 bool FNVTextureReader::ReadPixelsData(OnFinishedReadingPixelsDataCallback Callback,
-                                      const FTexture2DRHIRef& NewSourceTexture,
-                                      const FIntRect& NewSourceRect /*= FIntRect()*/,
+                                      const FTextureRHIRef &NewSourceTexture,
+                                      const FIntRect &NewSourceRect /*= FIntRect()*/,
                                       EPixelFormat NewReadbackPixelFormat /*= EPixelFormat::PF_Unknown*/,
-                                      const FIntPoint& NewReadbackSize /*= FIntPoint::ZeroValue*/,
-                                      bool bIgnoreAlpha/*= false*/)
+                                      const FIntPoint &NewReadbackSize /*= FIntPoint::ZeroValue*/,
+                                      bool bIgnoreAlpha /*= false*/)
 {
     ensure(Callback);
     SetSourceTexture(NewSourceTexture, NewSourceRect, NewReadbackPixelFormat, NewReadbackSize);
     return ReadPixelsData(Callback, bIgnoreAlpha);
 }
 
-bool FNVTextureReader::ReadPixelsRaw(const FTexture2DRHIRef& NewSourceTexture, const FIntRect& SourceRect,
-                                     EPixelFormat TargetPixelFormat, const FIntPoint& TargetSize, bool bIgnoreAlpha, OnFinishedReadingRawPixelsCallback Callback)
+bool FNVTextureReader::ReadPixelsRaw(const FTextureRHIRef &NewSourceTexture, const FIntRect &SourceRect,
+                                     EPixelFormat TargetPixelFormat, const FIntPoint &TargetSize, bool bIgnoreAlpha, OnFinishedReadingRawPixelsCallback Callback)
 {
     bool bResult = false;
 
@@ -173,10 +201,7 @@ bool FNVTextureReader::ReadPixelsRaw(const FTexture2DRHIRef& NewSourceTexture, c
     ensure(SourceRect.Area() != 0);
     ensure(TargetSize != FIntPoint::ZeroValue);
     ensure(Callback);
-    if (!NewSourceTexture
-            || (SourceRect.Area() == 0)
-            || (TargetSize == FIntPoint::ZeroValue)
-            || (!Callback))
+    if (!NewSourceTexture || (SourceRect.Area() == 0) || (TargetSize == FIntPoint::ZeroValue) || (!Callback))
     {
         UE_LOG(LogNVTextureReader, Error, TEXT("invalid argument."));
     }
@@ -184,26 +209,26 @@ bool FNVTextureReader::ReadPixelsRaw(const FTexture2DRHIRef& NewSourceTexture, c
     {
         static const FName RendererModuleName("Renderer");
         // Load the renderer module on the main thread, as the module manager is not thread-safe, and copy the ptr into the render command, along with 'this' (which is protected by BlockUntilAvailable in ~FViewportSurfaceReader())
-        IRendererModule* RendererModule = &FModuleManager::GetModuleChecked<IRendererModule>(RendererModuleName);
+        IRendererModule *RendererModule = &FModuleManager::GetModuleChecked<IRendererModule>(RendererModuleName);
         check(RendererModule);
 
         // NOTE: This approach almost identical to function FViewportSurfaceReader::ResolveRenderTarget in FrameGrabber.cpp
         // The main different is we reading the pixels back from a render target instead of a viewport
         ENQUEUE_RENDER_COMMAND(ReadPixelsFromTexture)(
-            [=](FRHICommandListImmediate& RHICmdList)
+            [=](FRHICommandListImmediate &RHICmdList)
             {
-                FRHIResourceCreateInfo CreateInfo(FClearValueBinding::None);
+                // FRHIResourceCreateInfo CreateInfo(FClearValueBinding::None);
                 // TODO: Can cache the ReadbackTexture and reuse it if the format and size doesn't change instead of creating it everytime we read like this
                 // Need to be careful with reusing the ReadbackTexture: need to make sure the texture is already finished reading
-                FTexture2DRHIRef ReadbackTexture = RHICreateTexture2D(
-                                                       TargetSize.X,
-                                                       TargetSize.Y,
-                                                       TargetPixelFormat,
-                                                       1,
-                                                       1,
-                                                       TexCreate_CPUReadback,
-                                                       CreateInfo
-                                                   );
+                FRHITextureCreateDesc Desc =
+                    FRHITextureCreateDesc::Create2D(TEXT("NVTextureReadback"))
+                        .SetExtent(TargetSize.X, TargetSize.Y)
+                        .SetFormat(TargetPixelFormat)
+                        .SetNumMips(1)
+                        .SetNumSamples(1)
+                        .SetFlags(ETextureCreateFlags::CPUReadback);
+
+                FTextureRHIRef ReadbackTexture = RHICreateTexture(Desc);
 
                 bool bOverwriteAlpha = !bIgnoreAlpha;
                 // Copy the source texture to the readback texture so we can read it back later even after the source texture is modified
@@ -211,12 +236,12 @@ bool FNVTextureReader::ReadPixelsRaw(const FTexture2DRHIRef& NewSourceTexture, c
 
                 // Stage the texture to read back its pixels data
                 FIntPoint PixelSize = FIntPoint::ZeroValue;
-                void* PixelDataBuffer = nullptr;
+                void *PixelDataBuffer = nullptr;
                 RHICmdList.MapStagingSurface(ReadbackTexture, PixelDataBuffer, PixelSize.X, PixelSize.Y);
 
                 if (PixelDataBuffer)
                 {
-                    Callback((uint8*)PixelDataBuffer, TargetPixelFormat, PixelSize);
+                    Callback((uint8 *)PixelDataBuffer, TargetPixelFormat, PixelSize);
                 }
 
                 RHICmdList.UnmapStagingSurface(ReadbackTexture);
@@ -229,118 +254,25 @@ bool FNVTextureReader::ReadPixelsRaw(const FTexture2DRHIRef& NewSourceTexture, c
     return bResult;
 }
 
-void FNVTextureReader::CopyTexture2d(class IRendererModule* RendererModule, FRHICommandListImmediate& RHICmdList,
-                                     const FTexture2DRHIRef& NewSourceTexture, const FIntRect& SourceRect,
-                                     FTexture2DRHIRef& ReadbackTexture, const FIntRect& TargetRect, bool bOverwriteAlpha/*= true*/)
+void FNVTextureReader::CopyTexture2d(IRendererModule * /*RendererModule*/, FRHICommandListImmediate &RHICmdList,
+                                     const FTextureRHIRef &NewSourceTexture, const FIntRect &SourceRect,
+                                     FTextureRHIRef &TargetTexture, const FIntRect &TargetRect, bool /*bOverwriteAlpha*/)
 {
-    ensure(RendererModule);
-    ensure(NewSourceTexture);
-    ensure(ReadbackTexture);
-    if ((!RendererModule) || (!NewSourceTexture) || (!ReadbackTexture))
+    if (!NewSourceTexture || !TargetTexture)
     {
-        UE_LOG(LogNVTextureReader, Error, TEXT("invalid argument."));
+        UE_LOG(LogNVTextureReader, Error, TEXT("Invalid texture in CopyTexture2d"));
+        return;
     }
-    else
-    {
-        const FIntPoint TargetSize = TargetRect.Size();
-        FPooledRenderTargetDesc OutputDesc = FPooledRenderTargetDesc::Create2DDesc(
-            TargetSize,
-            ReadbackTexture->GetFormat(),
-            FClearValueBinding::None,
-            TexCreate_None,
-            TexCreate_RenderTargetable,
-            false);
 
-        TRefCountPtr<IPooledRenderTarget> ResampleTexturePooledRenderTarget;
-        RendererModule->RenderTargetPoolFindFreeElement(RHICmdList, OutputDesc, ResampleTexturePooledRenderTarget, TEXT("ResampleTexture"));
-        check(ResampleTexturePooledRenderTarget);
-        // Get a temporary render target from the render thread's pool to draw the source render target on
-        const FSceneRenderTargetItem& DestRenderTarget = ResampleTexturePooledRenderTarget->GetRenderTargetItem();
+    FRHICopyTextureInfo CopyInfo;
+    CopyInfo.SourcePosition = FIntVector(SourceRect.Min.X, SourceRect.Min.Y, 0);
+    CopyInfo.DestPosition = FIntVector(TargetRect.Min.X, TargetRect.Min.Y, 0);
+    CopyInfo.Size = FIntVector(TargetRect.Width(), TargetRect.Height(), 1);
 
-        FRHIRenderPassInfo RPInfo(DestRenderTarget.TargetableTexture, ERenderTargetActions::Load_Store, ReadbackTexture);
-        RHICmdList.BeginRenderPass(RPInfo, TEXT("TextureReaderResolveRenderTarget"));
-        {
-            RHICmdList.SetViewport(0, 0, 0.0f, TargetSize.X, TargetSize.Y, 1.0f);
-
-            FGraphicsPipelineStateInitializer GraphicsPSOInit;
-            RHICmdList.ApplyCachedRenderTargets(GraphicsPSOInit);
-            //GraphicsPSOInit.BlendState = TStaticBlendState<>::GetRHI();
-            // NOTE: Render the source texture as is on to the target:
-            // RGB = src.rgb * 1 + dst.rgb * 0
-            // A = src.a * 1 + dst.a * 0
-            if (bOverwriteAlpha)
-            {
-                GraphicsPSOInit.BlendState = TStaticBlendState<CW_RGBA, BO_Add, BF_One, BF_Zero, BO_Add, BF_One, BF_Zero>::GetRHI();
-            }
-            else
-            {
-                // A = MAX(src.a, dst.a)
-                GraphicsPSOInit.BlendState = TStaticBlendState<CW_RGBA, BO_Add, BF_One, BF_Zero, BO_Max, BF_One, BF_One>::GetRHI();
-            }
-            GraphicsPSOInit.RasterizerState = TStaticRasterizerState<>::GetRHI();
-            GraphicsPSOInit.DepthStencilState = TStaticDepthStencilState<false, CF_Always>::GetRHI();
-
-            const ERHIFeatureLevel::Type FeatureLevel = GMaxRHIFeatureLevel;
-
-            TShaderMap<FGlobalShaderType>* ShaderMap = GetGlobalShaderMap(FeatureLevel);
-            TShaderMapRef<FScreenVS> VertexShader(ShaderMap);
-            TShaderMapRef<FScreenPS> PixelShader(ShaderMap);
-
-            GraphicsPSOInit.BoundShaderState.VertexDeclarationRHI = GFilterVertexDeclaration.VertexDeclarationRHI;
-            GraphicsPSOInit.BoundShaderState.VertexShaderRHI = GETSAFERHISHADER_VERTEX(*VertexShader);
-            GraphicsPSOInit.BoundShaderState.PixelShaderRHI = GETSAFERHISHADER_PIXEL(*PixelShader);
-            GraphicsPSOInit.PrimitiveType = PT_TriangleList;
-
-            SetGraphicsPipelineState(RHICmdList, GraphicsPSOInit);
-
-            // NOTE: Render the render target's texture to the temp texture in the GPU so we can copy the temp texture to the read-back texture in the CPU
-            const FIntPoint& FullSourceSize = NewSourceTexture->GetSizeXY();
-            const FIntPoint& SourceSize = SourceRect.Size();
-
-            ensure(FullSourceSize != FIntPoint::ZeroValue);
-            ensure(SourceSize != FIntPoint::ZeroValue);
-
-            if (TargetSize == SourceSize)
-            {
-                PixelShader->SetParameters(RHICmdList, TStaticSamplerState<SF_Point>::GetRHI(), NewSourceTexture);
-            }
-            // Must use Bilinear sampling if the size of the source and target regions are not the same
-            else
-            {
-                PixelShader->SetParameters(RHICmdList, TStaticSamplerState<SF_Bilinear>::GetRHI(), NewSourceTexture);
-            }
-
-            const float U = float(SourceRect.Min.X) / float(FullSourceSize.X);
-            const float V = float(SourceRect.Min.Y) / float(FullSourceSize.Y);
-            const float SizeU = float(SourceRect.Max.X) / float(FullSourceSize.X) - U;
-            const float SizeV = float(SourceRect.Max.Y) / float(FullSourceSize.Y) - V;
-
-            // Render the source texture to the target render target
-            RendererModule->DrawRectangle(
-                RHICmdList,
-                0, 0,                                   // Dest X, Y
-                TargetSize.X,                           // Dest Width
-                TargetSize.Y,                           // Dest Height
-                U, V,                                   // Source U, V
-                1, 1,                                   // Source USize, VSize
-                SourceRect.Max - SourceRect.Min,        // Target buffer size
-                FIntPoint(1, 1),                        // Source texture size
-                *VertexShader,
-                EDRF_Default);
-        }
-        RHICmdList.EndRenderPass();
-
-        // Asynchronously copy render target from GPU to CPU
-        const bool bKeepOriginalSurface = false;
-        const FResolveParams ResolveParams;
-        RHICmdList.CopyToResolveTarget(
-            DestRenderTarget.TargetableTexture,
-            ReadbackTexture,
-            ResolveParams);
-    }
+    RHICmdList.CopyTexture(NewSourceTexture, TargetTexture, CopyInfo);
 }
 
-FNVTexturePixelData FNVTextureReader::BuildPixelData(uint8* PixelsData, EPixelFormat PixelFormat, const FIntPoint& ImageSize, const FIntPoint& TargetSize)
+FNVTexturePixelData FNVTextureReader::BuildPixelData(uint8 *PixelsData, EPixelFormat PixelFormat, const FIntPoint &ImageSize, const FIntPoint &TargetSize)
 {
     FNVTexturePixelData NewPixelData;
     BuildPixelData(NewPixelData, PixelsData, PixelFormat, ImageSize, TargetSize);
@@ -348,7 +280,7 @@ FNVTexturePixelData FNVTextureReader::BuildPixelData(uint8* PixelsData, EPixelFo
     return NewPixelData;
 }
 
-void FNVTextureReader::BuildPixelData(FNVTexturePixelData& OutPixelsData, uint8* RawPixelsData, EPixelFormat PixelFormat, const FIntPoint& ImageSize, const FIntPoint& TargetSize)
+void FNVTextureReader::BuildPixelData(FNVTexturePixelData &OutPixelsData, uint8 *RawPixelsData, EPixelFormat PixelFormat, const FIntPoint &ImageSize, const FIntPoint &TargetSize)
 {
     ensure(RawPixelsData);
     if (!RawPixelsData)
@@ -367,8 +299,8 @@ void FNVTextureReader::BuildPixelData(FNVTexturePixelData& OutPixelsData, uint8*
         const uint32 PixelBufferSize = PixelByteSize * PixelCount;
         OutPixelsData.PixelData.InsertUninitialized(0, PixelBufferSize);
 
-        uint8* SrcPixelBuffer = RawPixelsData;
-        uint8* Dest = &OutPixelsData.PixelData[0];
+        uint8 *SrcPixelBuffer = RawPixelsData;
+        uint8 *Dest = &OutPixelsData.PixelData[0];
         // NOTE: The 2d size of the read back pixel buffer (PixelSize) may be different than the target size that we want (ReadbackSize)
         // So we must make sure to only copy the minimum part of it
         const int32 MinWidth = FMath::Min(TargetSize.X, ImageSize.X);
@@ -387,7 +319,7 @@ void FNVTextureReader::BuildPixelData(FNVTexturePixelData& OutPixelsData, uint8*
 }
 
 //======================= FNVTextureRenderTargetReader =======================//
-FNVTextureRenderTargetReader::FNVTextureRenderTargetReader(UTextureRenderTarget2D* InRenderTarget) : FNVTextureReader()
+FNVTextureRenderTargetReader::FNVTextureRenderTargetReader(UTextureRenderTarget2D *InRenderTarget) : FNVTextureReader()
 {
     SourceRenderTarget = InRenderTarget;
 }
@@ -397,7 +329,7 @@ FNVTextureRenderTargetReader::~FNVTextureRenderTargetReader()
     SourceRenderTarget = nullptr;
 }
 
-void FNVTextureRenderTargetReader::SetTextureRenderTarget(UTextureRenderTarget2D* NewRenderTarget)
+void FNVTextureRenderTargetReader::SetTextureRenderTarget(UTextureRenderTarget2D *NewRenderTarget)
 {
     if (NewRenderTarget != SourceRenderTarget)
     {
@@ -412,29 +344,47 @@ bool FNVTextureRenderTargetReader::ReadPixelsData(OnFinishedReadingPixelsDataCal
     return FNVTextureReader::ReadPixelsData(Callback, bIgnoreAlpha);
 }
 
-bool FNVTextureRenderTargetReader::ReadPixelsData(FNVTexturePixelData& OutPixelsData)
+bool FNVTextureRenderTargetReader::ReadPixelsData(FNVTexturePixelData &OutPixelsData)
 {
     ENQUEUE_RENDER_COMMAND(ReadPixelsFromTexture)(
-    [this, &OutPixelsData = OutPixelsData](FRHICommandListImmediate& RHICmdList)
-    {
-        const FTextureRenderTargetResource* RenderTargetResource = SourceRenderTarget->GetRenderTargetResource();
-        ensure(RenderTargetResource);
-        if (RenderTargetResource)
+        [this, &OutPixelsData = OutPixelsData](FRHICommandListImmediate &RHICmdList)
         {
-            SourceTexture = RenderTargetResource->GetRenderTargetTexture();
-            ensure(SourceTexture);
-            if (SourceTexture)
+            const FTextureRenderTargetResource *RenderTargetResource = SourceRenderTarget->GetRenderTargetResource();
+            ensure(RenderTargetResource);
+
+            if (RenderTargetResource)
             {
-                void* PixelDataBuffer = nullptr;
+                FTextureRHIRef RenderTexture = RenderTargetResource->GetRenderTargetTexture();
+
+                // --- create a CPU-readback texture ---
+                FRHITextureCreateDesc Desc =
+                    FRHITextureCreateDesc::Create2D(TEXT("RenderTargetReadback"))
+                        .SetExtent(RenderTexture->GetSizeXY().X, RenderTexture->GetSizeXY().Y)
+                        .SetFormat(RenderTexture->GetFormat())
+                        .SetNumMips(1)
+                        .SetFlags(ETextureCreateFlags::CPUReadback);
+
+                FTextureRHIRef ReadbackTexture = RHICreateTexture(Desc);
+
+                // --- copy GPU → CPU staging texture ---
+                FRHICopyTextureInfo CopyInfo;
+                CopyInfo.Size = FIntVector(ReadbackTexture->GetSizeXY().X, ReadbackTexture->GetSizeXY().Y, 1);
+                RHICmdList.CopyTexture(RenderTexture, ReadbackTexture, CopyInfo);
+
+                // --- map the staging surface ---
+                void *PixelDataBuffer = nullptr;
                 FIntPoint PixelSize = FIntPoint::ZeroValue;
-                RHICmdList.MapStagingSurface(SourceTexture, PixelDataBuffer, PixelSize.X, PixelSize.Y);
+                RHICmdList.MapStagingSurface(ReadbackTexture, PixelDataBuffer, PixelSize.X, PixelSize.Y);
 
-                BuildPixelData(OutPixelsData, (uint8*)PixelDataBuffer, ReadbackPixelFormat, PixelSize, ReadbackSize);
+                if (PixelDataBuffer)
+                {
+                    BuildPixelData(OutPixelsData, static_cast<uint8 *>(PixelDataBuffer),
+                                   ReadbackPixelFormat, PixelSize, ReadbackSize);
+                }
 
-                RHICmdList.UnmapStagingSurface(SourceTexture);
+                RHICmdList.UnmapStagingSurface(ReadbackTexture);
             }
-        }
-    });
+        });
 
     FlushRenderingCommands();
 
@@ -448,8 +398,8 @@ void FNVTextureRenderTargetReader::UpdateTextureFromRenderTarget()
     if (SourceRenderTarget)
     {
         // NOTE: Because function GameThread_GetRenderTargetResource is not marked as const, we can't have SourceRenderTarget as const either
-        const FTextureRenderTargetResource* RenderTargetResource = IsInGameThread() ? SourceRenderTarget->GameThread_GetRenderTargetResource()
-                : SourceRenderTarget->GetRenderTargetResource();
+        const FTextureRenderTargetResource *RenderTargetResource = IsInGameThread() ? SourceRenderTarget->GameThread_GetRenderTargetResource()
+                                                                                    : SourceRenderTarget->GetRenderTargetResource();
         if (RenderTargetResource)
         {
             SetSourceTexture(RenderTargetResource->GetRenderTargetTexture());

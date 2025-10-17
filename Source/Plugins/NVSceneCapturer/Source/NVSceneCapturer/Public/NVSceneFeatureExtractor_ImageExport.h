@@ -12,6 +12,7 @@
 #include "NVSceneCapturerUtils.h"
 #include "NVTextureReader.h"
 #include "NVSceneFeatureExtractor.h"
+#include "Materials/MaterialInterface.h"
 #include "NVSceneFeatureExtractor_ImageExport.generated.h"
 
 class UNVSceneCapturerViewpointComponent;
@@ -39,7 +40,7 @@ public:
     virtual void StopCapturing() override;
     virtual void UpdateCapturerSettings() override;
 
-    UNVSceneCaptureComponent2D* CreateSceneCaptureComponent2d(UMaterialInstance* PostProcessingMaterial = nullptr, const FString& ComponentName = TEXT(""));
+    UNVSceneCaptureComponent2D *CreateSceneCaptureComponent2d(UMaterialInterface *PostProcessingMaterial = nullptr, const FString &ComponentName = TEXT(""));
 
     virtual class UTextureRenderTarget2D* GetRenderTarget() const;
 

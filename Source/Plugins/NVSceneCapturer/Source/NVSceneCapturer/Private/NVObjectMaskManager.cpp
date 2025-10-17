@@ -62,7 +62,7 @@ FString UNVObjectMaskMananger::GetActorMaskName(ENVActorMaskNameType MaskNameTyp
             }
             case ENVActorMaskNameType::UseActorMeshName:
             {
-                TArray<UActorComponent*> ActorMeshComps = CheckActor->GetComponentsByClass(UMeshComponent::StaticClass());
+                TArray<UActorComponent*> ActorMeshComps = CheckActor->K2_GetComponentsByClass(UMeshComponent::StaticClass());
                 for (UActorComponent* CheckComp : ActorMeshComps)
                 {
                     UMeshComponent* CheckMeshComp = Cast<UMeshComponent>(CheckComp);
@@ -85,7 +85,7 @@ FString UNVObjectMaskMananger::GetActorMaskName(ENVActorMaskNameType MaskNameTyp
                             USkeletalMeshComponent* CheckSkeletalMeshComp = Cast<USkeletalMeshComponent>(CheckComp);
                             if (CheckSkeletalMeshComp)
                             {
-                                USkeletalMesh* SkeletalMesh = CheckSkeletalMeshComp->SkeletalMesh;
+                                USkeletalMesh *SkeletalMesh = CheckSkeletalMeshComp->GetSkeletalMeshAsset();
                                 if (SkeletalMesh)
                                 {
                                     ActorMaskName = SkeletalMesh->GetName();
@@ -122,7 +122,7 @@ void UNVObjectMaskMananger::ApplyStencilMaskToActor(AActor* CheckActor, uint8 Ma
 	else
 	{
 		// Update the actor's meshes to render custom depth or not as this component's data changed
-		TArray<UActorComponent*> ActorMeshComps = CheckActor->GetComponentsByClass(UMeshComponent::StaticClass());
+		TArray<UActorComponent*> ActorMeshComps = CheckActor->K2_GetComponentsByClass(UMeshComponent::StaticClass());
 		for (UActorComponent* CheckComp : ActorMeshComps)
 		{
 			UMeshComponent* CheckMeshComp = Cast<UMeshComponent>(CheckComp);
@@ -148,11 +148,13 @@ void UNVObjectMaskMananger::ApplyVertexColorMaskToActor(AActor* CheckActor, uint
 		const FColor& MaskVertexColor = NVSceneCapturerUtils::ConvertInt32ToVertexColor(MaskId);
 		NVSceneCapturerUtils::SetMeshVertexColor(CheckActor, MaskVertexColor);
 
-#if WITH_EDITOR
-		// Mark the actor as selected so it will show up on the vertex color view mode
-		GSelectedActorAnnotation.Set(CheckActor);
-#endif // WITH_EDITOR
-	}
+    #if WITH_EDITOR
+    if (GEditor)
+    {
+        GEditor->SelectActor(CheckActor, true, true, true);
+    }
+    #endif
+    }
 }
 
 FString UNVObjectMaskMananger::GetActorMaskName(const AActor* CheckActor) const
@@ -165,7 +167,7 @@ FString UNVObjectMaskMananger::GetActorMaskName(const AActor* CheckActor) const
     }
     else
     {
-        if (!CheckActor->bHidden)
+        if (!CheckActor->IsHidden())
         {
             result = GetActorMaskName(ActorMaskNameType, CheckActor);
         }
@@ -176,9 +178,9 @@ FString UNVObjectMaskMananger::GetActorMaskName(const AActor* CheckActor) const
 bool UNVObjectMaskMananger::ShouldCheckActorMask(const AActor* CheckActor) const
 {
     check(CheckActor);
-    if (CheckActor && !CheckActor->bHidden)
+    if (CheckActor && !CheckActor->IsHidden())
     {
-        TArray<UActorComponent*> ActorMeshComps = CheckActor->GetComponentsByClass(UMeshComponent::StaticClass());
+        TArray<UActorComponent*> ActorMeshComps = CheckActor->K2_GetComponentsByClass(UMeshComponent::StaticClass());
         for (UActorComponent* CheckActorComp : ActorMeshComps)
         {
             UMeshComponent* CheckMeshComp = Cast<UMeshComponent>(CheckActorComp);

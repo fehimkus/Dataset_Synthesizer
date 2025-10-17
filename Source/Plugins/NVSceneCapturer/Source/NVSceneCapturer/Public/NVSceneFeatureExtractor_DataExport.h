@@ -6,8 +6,10 @@
 
 #pragma once
 
+#include "CoreMinimal.h"
 #include "NVSceneFeatureExtractor.h"
 #include "NVSceneCapturerUtils.h"
+#include "Runtime/Engine/Public/ConvexVolume.h"
 #include "NVSceneFeatureExtractor_DataExport.generated.h"
 
 USTRUCT(BlueprintType)
@@ -18,82 +20,91 @@ struct NVSCENECAPTURER_API FNVDataExportSettings
 public:
     FNVDataExportSettings();
 
-public: // Editor properties
+    // --- Editor properties ---
     UPROPERTY(EditAnywhere, Category = "Export")
-    ENVIncludeObjects IncludeObjectsType;
+    ENVIncludeObjects IncludeObjectsType = ENVIncludeObjects::AllTaggedObjects;
 
     /// If true, the exporter will ignore all the hidden actors in game
     UPROPERTY(EditAnywhere, Category = "Export")
-    bool bIgnoreHiddenActor;
+    bool bIgnoreHiddenActor = true;
 
-    /// How to generate 3d bounding box for each exported actor mesh
+    /// How to generate 3D bounding box for each exported actor mesh
     UPROPERTY(EditAnywhere, Category = "Export")
-    ENVBoundsGenerationType BoundsType;
+    ENVBoundsGenerationType BoundsType = ENVBoundsGenerationType::VE_OOBB;
 
-    /// How to generate the 2d bounding box for each exported actor mesh
+    /// How to generate the 2D bounding box for each exported actor mesh
     UPROPERTY(EditAnywhere, Category = "Export")
-    ENVBoundBox2dGenerationType BoundingBox2dType;
-
-    UPROPERTY(EditAnywhere, Category = "Export")
-    bool bOutputEvenIfNoObjectsAreInView;
+    ENVBoundBox2dGenerationType BoundingBox2dType = ENVBoundBox2dGenerationType::FromMeshBodyCollision;
 
     UPROPERTY(EditAnywhere, Category = "Export")
-    FFloatInterval DistanceScaleRange;
+    bool bOutputEvenIfNoObjectsAreInView = true;
 
-    /// If true, all the image space coordinates are exported in absolute pixel
-    /// Otherwise the coordinates are in  ratio between the position and the image size
     UPROPERTY(EditAnywhere, Category = "Export")
-    bool bExportImageCoordinateInPixel;
+    FFloatInterval DistanceScaleRange = FFloatInterval(100.f, 1000.f);
+
+    /// If true, export absolute pixel coordinates; otherwise, normalized [0,1] ratios
+    UPROPERTY(EditAnywhere, Category = "Export")
+    bool bExportImageCoordinateInPixel = true;
 };
 
-// Base class for all the feature extractors that export the scene data to json file
+// ============================================================================
+// Base class for all feature extractors that export scene data to JSON
+// ============================================================================
 UCLASS(Abstract)
 class NVSCENECAPTURER_API UNVSceneFeatureExtractor_AnnotationData : public UNVSceneFeatureExtractor
 {
     GENERATED_BODY()
 
 public:
-    UNVSceneFeatureExtractor_AnnotationData(const FObjectInitializer& ObjectInitializer);
+    UNVSceneFeatureExtractor_AnnotationData(const FObjectInitializer &ObjectInitializer);
 
     virtual void StartCapturing() override;
     virtual void UpdateCapturerSettings() override;
-
-    /// Callback function get called after capturing scene's annotation data
-    /// TSharedPtr<FJsonObject> - The JSON object contain the annotation data
-    /// UNVSceneFeatureExtractor_AnnotationData* - Reference to the feature extractor that captured the scene annotation data
-    typedef TFunction<void(TSharedPtr<FJsonObject>, UNVSceneFeatureExtractor_AnnotationData*)> OnFinishedCaptureSceneAnnotationDataCallback;
-
-    /// Capture the annotation data of the scene and return it in JSON format
-    bool CaptureSceneAnnotationData(UNVSceneFeatureExtractor_AnnotationData::OnFinishedCaptureSceneAnnotationDataCallback Callback);
-
-protected:
-    TSharedPtr<FJsonObject> CaptureSceneAnnotationData();
     virtual void UpdateSettings() override;
 
+    /// Callback function called after capturing scene annotation data
+    using OnFinishedCaptureSceneAnnotationDataCallback =
+        TFunction<void(TSharedPtr<FJsonObject>, UNVSceneFeatureExtractor_AnnotationData *)>;
+
+    /// Capture the annotation data of the scene and return it in JSON format
+    bool CaptureSceneAnnotationData(OnFinishedCaptureSceneAnnotationDataCallback Callback);
+
+protected:
+    TSharedPtr<FJsonObject> CaptureSceneAnnotationData_Internal();
+
     void UpdateProjectionMatrix();
-    /// NOTE: May make this function static
-    bool GatherActorData(const AActor* CheckActor, FCapturedObjectData& ActorData);
-    bool ShouldExportActor(const AActor* CheckActor) const;
-    bool IsActorInViewFrustum(const FConvexVolume& ViewFrustum, const AActor* CheckActor) const;
 
-    FVector ProjectWorldPositionToImagePosition(const FVector& WorldPosition) const;
+    /// Collects all actor data into FCapturedObjectData
+    bool GatherActorData(const AActor *CheckActor, FCapturedObjectData &ActorData);
 
-    FBox2D GetBoundingBox2D(const AActor* CheckActor, bool bClampToImage = true) const;
-    /// Calculate a 2D axis-aligned bounding box of a 3d shape knowing its vertexes on the viewport
+    /// Whether to include this actor in the export
+    bool ShouldExportActor(const AActor *CheckActor) const;
+
+    /// Checks if actor is within camera frustum
+    bool IsActorInViewFrustum(const FConvexVolume &ViewFrustum, const AActor *CheckActor) const;
+
+    /// Projects a world-space position to image-space coordinates
+    FVector ProjectWorldPositionToImagePosition(const FVector &WorldPosition) const;
+
+    /// Gets 2D bounding box of the actor (projected on image)
+    FBox2D GetBoundingBox2D(const AActor *CheckActor, bool bClampToImage = true) const;
+
+    /// Calculates 2D AABB of a 3D vertex list on the viewport
     FBox2D Calculate2dAABB(TArray<FVector> Vertexes, bool bClampToImage = true) const;
-    /// Calculate a 2D axis-aligned bounding box of a static mesh on the viewport
-    FBox2D Calculate2dAABB_MeshComplexCollision(const class UMeshComponent* CheckMeshComp, bool bClampToImage = true) const;
+
+    /// Calculates 2D AABB of a static mesh using complex collision data
+    FBox2D Calculate2dAABB_MeshComplexCollision(const class UMeshComponent *CheckMeshComp, bool bClampToImage = true) const;
 
 protected: // Editor properties
-    UPROPERTY(EditAnywhere, SimpleDisplay, Category = Config, meta=(ShowOnlyInnerProperties))
+    UPROPERTY(EditAnywhere, SimpleDisplay, Category = Config, meta = (ShowOnlyInnerProperties = true))
     FNVDataExportSettings DataExportSettings;
 
     UPROPERTY(Transient)
-    FMatrix ViewProjectionMatrix;
+    FMatrix ViewProjectionMatrix = FMatrix::Identity;
 
     UPROPERTY(Transient)
-    FMatrix ProjectionMatrix;
+    FMatrix ProjectionMatrix = FMatrix::Identity;
 
-protected: // Transient properties
+protected: // Runtime copy of the export settings
     FNVDataExportSettings ProtectedDataExportSettings;
 };

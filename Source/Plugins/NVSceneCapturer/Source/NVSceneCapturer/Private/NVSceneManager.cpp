@@ -105,7 +105,7 @@ void ANVSceneManager::BeginPlay()
 
     UWorld* World = GetWorld();
 #if WITH_EDITOR
-    bool bIsSimulating = GUnrealEd ? (GUnrealEd->bIsSimulatingInEditor || GUnrealEd->bIsSimulateInEditorQueued) : false;
+    bool bIsSimulating = GUnrealEd ? GUnrealEd->bIsSimulatingInEditor : false;
     if (!World || !World->IsGameWorld() || bIsSimulating)
     {
         return;
@@ -345,7 +345,7 @@ void ANVSceneManager::OnCapturingCompleted(ANVSceneCapturerActor* SceneCapturer,
 #if WITH_EDITORONLY_DATA
 void ANVSceneManager::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent)
 {
-    const UProperty* PropertyThatChanged = PropertyChangedEvent.MemberProperty;
+    const FProperty* PropertyThatChanged = PropertyChangedEvent.MemberProperty;
     // Don't add ensure(PropertyThatChanged) here. 
     // When ANVSceneManagerActor is deplicated, PropertyThatChanged can be null.
     if (PropertyThatChanged)

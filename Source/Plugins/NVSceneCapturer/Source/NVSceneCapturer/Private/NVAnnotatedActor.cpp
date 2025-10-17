@@ -53,7 +53,7 @@ void ANVAnnotatedActor::BeginPlay()
     UWorld* World = GetWorld();
     ensure(World);
 #if WITH_EDITOR
-    bool bIsSimulating = GUnrealEd ? (GUnrealEd->bIsSimulatingInEditor || GUnrealEd->bIsSimulateInEditorQueued) : false;
+    bool bIsSimulating = GUnrealEd ? (GUnrealEd->bIsSimulatingInEditor || (GUnrealEd->PlayWorld != nullptr)) : false;
     if (!World || !World->IsGameWorld() || bIsSimulating)
     {
         return;
@@ -72,7 +72,7 @@ void ANVAnnotatedActor::PostInitializeComponents()
 #if WITH_EDITORONLY_DATA
 void ANVAnnotatedActor::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent)
 {
-    const UProperty* PropertyThatChanged = PropertyChangedEvent.MemberProperty;
+    const FProperty* PropertyThatChanged = PropertyChangedEvent.MemberProperty;
     if (PropertyThatChanged)
     {
         const FName ChangedPropName = PropertyThatChanged->GetFName();
@@ -141,58 +141,61 @@ void ANVAnnotatedActor::UpdateMeshCuboid()
     }
 }
 
-FMatrix ANVAnnotatedActor::CalculatePCA(const class UStaticMesh* Mesh)
+FMatrix ANVAnnotatedActor::CalculatePCA(const UStaticMesh *Mesh)
 {
     FMatrix TransformMatrix = FMatrix::Identity;
-    if (Mesh)
+
+    if (!Mesh)
+        return TransformMatrix;
+
+    // ✅ UE5-safe: access render data properly
+    const FStaticMeshRenderData *RenderData = Mesh->GetRenderData();
+    if (!RenderData || RenderData->LODResources.Num() == 0)
+        return TransformMatrix;
+
+    const FPositionVertexBuffer &MeshVertexBuffer = RenderData->LODResources[0].VertexBuffers.PositionVertexBuffer;
+    const uint32 VertexCount = MeshVertexBuffer.GetNumVertices();
+    if (VertexCount == 0)
+        return TransformMatrix;
+
+    // Collect all vertices
+    TArray<FVector> MeshVertices;
+    MeshVertices.Reserve(VertexCount);
+    for (uint32 i = 0; i < VertexCount; i++)
     {
-        TArray<FVector> MeshVertices;
-        MeshVertices.Reset();
+        // UE5: VertexPosition() returns FVector3f (float) → convert to FVector (double)
+        const FVector3f VertexPosF = MeshVertexBuffer.VertexPosition(i);
+        MeshVertices.Add(FVector(VertexPosF));
+    }
 
-        const FPositionVertexBuffer& MeshVertexBuffer = Mesh->RenderData->LODResources[0].VertexBuffers.PositionVertexBuffer;
-        const uint32 VertexesCount = MeshVertexBuffer.GetNumVertices();
-        if (VertexesCount != 0)
+    // Compute mean vertex
+    FVector MeanVertex = FVector::ZeroVector;
+    for (const FVector &V : MeshVertices)
+        MeanVertex += V;
+    MeanVertex /= VertexCount;
+
+    // Compute covariance matrix
+    FMatrix Covariance = FMatrix::Identity;
+    for (int i = 0; i < 3; i++)
+    {
+        for (int j = 0; j < 3; j++)
         {
-            MeshVertices.Reserve(VertexesCount);
-            for (uint32 i = 0; i < VertexesCount; i++)
+            double Cij = 0.0;
+            for (const FVector &V : MeshVertices)
             {
-                const FVector& VertexPosition = MeshVertexBuffer.VertexPosition(i);
-                MeshVertices.Add(VertexPosition);
+                Cij += (V[i] - MeanVertex[i]) * (V[j] - MeanVertex[j]);
             }
-
-            // Find the mean vertex
-            FVector MeanVertex = FVector::ZeroVector;
-            for (uint32 i = 0; i < VertexesCount; i++)
-            {
-                MeanVertex += MeshVertices[i];
-            }
-            MeanVertex /= VertexesCount;
-
-            // Calculate the covariance matrix
-            FMatrix CMat = FMatrix::Identity;
-            for (int i = 0; i < 3; i++)
-            {
-                for (int j = 0; j < 3; j++)
-                {
-                    float Cij = 0.f;
-                    for (uint32 k = 0; k < VertexesCount; k++)
-                    {
-                        Cij += (MeshVertices[k][i] - MeanVertex[i]) * (MeshVertices[k][j] - MeanVertex[j]);
-                    }
-                    Cij /= VertexesCount;
-
-                    CMat.M[i][j] = Cij;
-                }
-            }
-
-            // Find the EigenVector of the matrix
-            FVector ZAxis = ComputeEigenVector(CMat);
-            FVector XAxis, YAxis;
-            ZAxis.FindBestAxisVectors(YAxis, XAxis);
-
-            TransformMatrix = FMatrix(XAxis, YAxis, ZAxis, MeanVertex);
+            Cij /= VertexCount;
+            Covariance.M[i][j] = static_cast<float>(Cij);
         }
     }
+
+    // Eigen decomposition (dominant eigenvector via power method)
+    FVector ZAxis = ComputeEigenVector(Covariance);
+    FVector XAxis, YAxis;
+    ZAxis.FindBestAxisVectors(YAxis, XAxis);
+
+    TransformMatrix = FMatrix(XAxis, YAxis, ZAxis, MeanVertex);
     return TransformMatrix;
 }
 

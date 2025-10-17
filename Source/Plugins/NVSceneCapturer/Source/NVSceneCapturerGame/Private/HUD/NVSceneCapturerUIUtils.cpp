@@ -4,7 +4,7 @@
 * International License.  (https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode)
 */
 
-#include "NVSceneCapturerUIUtils.h"
+#include "HUD/NVSceneCapturerUIUtils.h"
 #include "EngineMinimal.h"
 #include "Rendering/DrawElements.h"
 

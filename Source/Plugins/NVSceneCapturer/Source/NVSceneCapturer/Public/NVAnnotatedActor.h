@@ -8,6 +8,8 @@
 
 #include "GameFramework/Actor.h"
 #include "NVSceneCapturerUtils.h"
+#include "UObject/UnrealType.h"
+#include "Editor/UnrealEdEngine.h"
 #include "NVAnnotatedActor.generated.h"
 
 /**

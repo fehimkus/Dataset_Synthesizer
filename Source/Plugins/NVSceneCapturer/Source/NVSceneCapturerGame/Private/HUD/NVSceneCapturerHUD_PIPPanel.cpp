@@ -4,7 +4,7 @@
 * International License.  (https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode)
 */
 
-#include "NVSceneCapturerHUD_PIPPanel.h"
+#include "HUD/NVSceneCapturerHUD_PIPPanel.h"
 #include "NVSceneCapturerGameModeBase.h"
 #include "NVSceneCapturerPlayerController.h"
 #include "NVSceneCapturerUtils.h"

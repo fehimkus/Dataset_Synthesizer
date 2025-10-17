@@ -46,7 +46,9 @@ void UNVSceneFeatureExtractor_PixelData::UpdateSettings()
     SceneCaptureComponent = CreateSceneCaptureComponent2d(PostProcessMaterialInstance);
 }
 
-UNVSceneCaptureComponent2D* UNVSceneFeatureExtractor_PixelData::CreateSceneCaptureComponent2d(UMaterialInstance* PostProcessingMaterial, const FString& ComponentName)
+UNVSceneCaptureComponent2D *UNVSceneFeatureExtractor_PixelData::CreateSceneCaptureComponent2d(
+    UMaterialInterface *PostProcessingMaterial /*= nullptr*/,
+    const FString &ComponentName /*= TEXT("")*/)
 {
     UNVSceneCaptureComponent2D* NewSceneCaptureComp2D = nullptr;
     if (OwnerViewpoint)
@@ -62,7 +64,7 @@ UNVSceneCaptureComponent2D* UNVSceneFeatureExtractor_PixelData::CreateSceneCaptu
             NewSceneCaptureComp2D->SetupAttachment(OwnerViewpoint);
             if (bOverrideShowFlagSettings)
             {
-                NewSceneCaptureComp2D->ShowFlagSettings = OverrideShowFlagSettings;
+                NewSceneCaptureComp2D->SetShowFlagSettings(OverrideShowFlagSettings);
             }
 
             const auto& CapturerSettings = OwnerViewpoint->GetCapturerSettings();
@@ -314,5 +316,4 @@ void UNVSceneFeatureExtractor_VertexColorMask::UpdateSettings()
             SceneCaptureComponent->TextureTarget->TargetGamma = 1.f;
         }
     }
-    GVertexColorViewMode = EVertexColorViewMode::Color;
 }

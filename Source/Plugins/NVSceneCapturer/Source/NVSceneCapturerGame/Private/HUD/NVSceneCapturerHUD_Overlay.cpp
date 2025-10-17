@@ -4,7 +4,7 @@
 * International License.  (https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode)
 */
 
-#include "NVSceneCapturerHUD_Overlay.h"
+#include "HUD/NVSceneCapturerHUD_Overlay.h"
 #include "NVSceneCapturerPlayerController.h"
 #include "HUD/NVSceneCapturerUIUtils.h"
 #include "HUD/NVSceneCapturerHUD.h"

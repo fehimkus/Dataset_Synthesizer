@@ -3,19 +3,19 @@
 * This work is licensed under a Creative Commons Attribution-NonCommercial-ShareAlike 4.0
 * International License.  (https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode)
 */
-
 #include "NVSceneCapturerModule.h"
 #include "NVSceneCapturerUtils.h"
 #include "NVSceneCapturerViewpointComponent.h"
 #include "NVSceneFeatureExtractor.h"
 #include "NVSceneCapturerActor.h"
+
 #include "UObject/ConstructorHelpers.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/DrawFrustumComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/Engine.h"
 #include "Engine/CollisionProfile.h"
-#include "Components/DrawFrustumComponent.h"
-
+#include "Camera/CameraTypes.h"
 
 DEFINE_LOG_CATEGORY(LogNVSceneCapturerViewpointComponent);
 
@@ -234,7 +234,7 @@ void UNVSceneCapturerViewpointComponent::OnRegister()
             ProxyMeshComponent->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
             ProxyMeshComponent->bHiddenInGame = true;
             ProxyMeshComponent->CastShadow = false;
-            ProxyMeshComponent->PostPhysicsComponentTick.bCanEverTick = false;
+            ProxyMeshComponent->PrimaryComponentTick.bCanEverTick = false;
             ProxyMeshComponent->CreationMethod = CreationMethod;
             ProxyMeshComponent->RegisterComponentWithWorld(GetWorld());
         }
@@ -282,15 +282,18 @@ void UNVSceneCapturerViewpointComponent::OnUpdateTransform(EUpdateTransformFlags
 }
 
 #if WITH_EDITORONLY_DATA
-void UNVSceneCapturerViewpointComponent::AddReferencedObjects(UObject* InThis, FReferenceCollector& Collector)
+void UNVSceneCapturerViewpointComponent::AddReferencedObjects(UObject *InThis, FReferenceCollector &Collector)
 {
-    UNVSceneCapturerViewpointComponent* This = CastChecked<UNVSceneCapturerViewpointComponent>(InThis);
+    UNVSceneCapturerViewpointComponent *This = CastChecked<UNVSceneCapturerViewpointComponent>(InThis);
+
+    // Legacy GC-safe calls (still valid in UE5.5)
+    PRAGMA_DISABLE_DEPRECATION_WARNINGS
     Collector.AddReferencedObject(This->ProxyMeshComponent);
     Collector.AddReferencedObject(This->DrawFrustum);
+    PRAGMA_ENABLE_DEPRECATION_WARNINGS
 
     Super::AddReferencedObjects(InThis, Collector);
 }
-
 void UNVSceneCapturerViewpointComponent::SetCameraMesh(UStaticMesh* Mesh)
 {
     if (Mesh != CameraMesh)

@@ -131,7 +131,6 @@ void FNVSceneCapturerDetails::OnSelectViewpointComponentClicked(TSharedRef<IProp
     if (ViewpointComp)
     {
         GEditor->GetSelectedComponents()->Select(ViewpointComp, true);
-        GSelectedComponentAnnotation.Set(ViewpointComp);
     }
 }
 
@@ -199,7 +198,7 @@ void FNVFeatureExtractorSettingsCustomization::CustomizeHeader(TSharedRef<IPrope
     HeaderRow
     .NameContent()
     [
-        InPropertyHandle->CreatePropertyNameWidget(FText::GetEmpty(), FText::GetEmpty(), false)
+       InPropertyHandle->CreatePropertyNameWidget()
     ]
     .ValueContent()
     .MaxDesiredWidth(0.0f) // don't constrain the combo button width
@@ -252,7 +251,7 @@ void FNVSceneCapturerViewpointSettingsCustomization::CustomizeHeader(TSharedRef<
     HeaderRow
     .NameContent()
     [
-        InPropertyHandle->CreatePropertyNameWidget(FText::GetEmpty(), FText::GetEmpty(), false)
+        InPropertyHandle->CreatePropertyNameWidget()
     ]
     .ValueContent()
     .MaxDesiredWidth(0.0f) // don't constrain the combo button width

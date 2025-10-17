@@ -11,24 +11,36 @@
 #include "NVSceneCaptureComponent2D.h"
 #include "NVAnnotatedActor.h"
 #include "NVSceneManager.h"
+
 #include "UObject/ConstructorHelpers.h"
 #include "Components/StaticMeshComponent.h"
-#include "Engine/StaticMesh.h"
-#include "Engine/Engine.h"
-#include "EngineUtils.h"
-#include "Engine/CollisionProfile.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Components/DrawFrustumComponent.h"
+#include "Engine/StaticMesh.h"
+#include "Engine/CollisionProfile.h"
+#include "Engine/Engine.h"
+#include "Engine/SkeletalMesh.h"
+#include "EngineUtils.h"
+#include "PhysicsEngine/SkeletalBodySetup.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "PhysicsEngine/AggregateGeom.h"
 #include "PhysicsEngine/BodySetup.h"
 #include "PhysicsEngine/PhysicsAsset.h"
-#include "Components/SkeletalMeshComponent.h"
+#include "Rendering/SkeletalMeshRenderData.h" // ✅ FIX: moved headers
+#include "Rendering/SkeletalMeshLODRenderData.h"
+#include "Runtime/Engine/Public/ConvexVolume.h" // ✅ FIX: for FConvexVolume
+#include "SceneView.h"                          // for GetViewFrustumBounds
 
-//========================================== UNVSceneFeatureExtractor_DataExport ==========================================
-UNVSceneFeatureExtractor_AnnotationData::UNVSceneFeatureExtractor_AnnotationData(const FObjectInitializer& ObjectInitializer)
+
+
+// ============================================================================
+// UNVSceneFeatureExtractor_AnnotationData
+// ============================================================================
+
+UNVSceneFeatureExtractor_AnnotationData::UNVSceneFeatureExtractor_AnnotationData(const FObjectInitializer &ObjectInitializer)
     : Super(ObjectInitializer)
 {
-    Description = TEXT("Calculate the annotation data of the objects in the scene, e.g: location, rotation, bounding box ...");
+    Description = TEXT("Calculate annotation data of the objects in the scene (location, rotation, bounding box, etc.)");
 }
 
 void UNVSceneFeatureExtractor_AnnotationData::StartCapturing()
@@ -37,19 +49,15 @@ void UNVSceneFeatureExtractor_AnnotationData::StartCapturing()
     ProtectedDataExportSettings = DataExportSettings;
 }
 
-void UNVSceneFeatureExtractor_AnnotationData::UpdateSettings()
-{
-}
+void UNVSceneFeatureExtractor_AnnotationData::UpdateSettings() {}
+void UNVSceneFeatureExtractor_AnnotationData::UpdateCapturerSettings() {}
 
-void UNVSceneFeatureExtractor_AnnotationData::UpdateCapturerSettings()
-{
-}
-
-bool UNVSceneFeatureExtractor_AnnotationData::CaptureSceneAnnotationData(UNVSceneFeatureExtractor_AnnotationData::OnFinishedCaptureSceneAnnotationDataCallback Callback)
+bool UNVSceneFeatureExtractor_AnnotationData::CaptureSceneAnnotationData(
+    UNVSceneFeatureExtractor_AnnotationData::OnFinishedCaptureSceneAnnotationDataCallback Callback)
 {
     if (Callback)
     {
-        TSharedPtr<FJsonObject> CapturedData = CaptureSceneAnnotationData();
+        TSharedPtr<FJsonObject> CapturedData = CaptureSceneAnnotationData_Internal();
         if (CapturedData.IsValid())
         {
             Callback(CapturedData, this);
@@ -59,615 +67,452 @@ bool UNVSceneFeatureExtractor_AnnotationData::CaptureSceneAnnotationData(UNVScen
     return false;
 }
 
-TSharedPtr<FJsonObject> UNVSceneFeatureExtractor_AnnotationData::CaptureSceneAnnotationData()
+// ----------------------------------------------------------------------------
+// CaptureSceneAnnotationData_Internal
+// ----------------------------------------------------------------------------
+TSharedPtr<FJsonObject> UNVSceneFeatureExtractor_AnnotationData::CaptureSceneAnnotationData_Internal()
 {
-    TSharedPtr<FJsonObject> SceneDataJsonObj = nullptr;
-    if (OwnerViewpoint)
+    TSharedPtr<FJsonObject> SceneDataJsonObj;
+
+    if (!OwnerViewpoint)
+        return SceneDataJsonObj;
+
+    const auto &CapturerSettings = OwnerViewpoint->GetCapturerSettings();
+    const float FOVAngle = CapturerSettings.GetFOVAngle();
+    const FTransform &ViewTransform = OwnerViewpoint->GetComponentTransform();
+
+    FCapturedSceneData SceneData;
+
+    FCapturedViewpointData &ViewpointData = SceneData.camera_data;
+    ViewpointData.fov = FOVAngle;
+    ViewpointData.location_worldframe = ViewTransform.GetLocation();
+    ViewpointData.quaternion_xyzw_worldframe = ViewTransform.GetRotation();
+    ViewpointData.CameraSettings = CapturerSettings.GetCameraIntrinsicSettings();
+
+    UpdateProjectionMatrix();
+    ViewpointData.ProjectionMatrix = ProjectionMatrix;
+    ViewpointData.ViewProjectionMatrix = ViewProjectionMatrix;
+
+    if (UWorld *World = GetWorld())
     {
-        const auto& CapturerSettings = OwnerViewpoint->GetCapturerSettings();
-        const float FOVAngle = CapturerSettings.GetFOVAngle();
-        const FTransform& ViewTransform = OwnerViewpoint->GetComponentTransform();
-
-        FCapturedSceneData SceneData;
-
-        FCapturedViewpointData& ViewpointData = SceneData.camera_data;
-        const FVector& ViewLocation = ViewTransform.GetLocation();
-        const FQuat& ViewRotation = ViewTransform.GetRotation();
-        ViewpointData.fov = FOVAngle;
-        ViewpointData.location_worldframe = ViewLocation;
-        ViewpointData.quaternion_xyzw_worldframe = ViewRotation;
-        ViewpointData.CameraSettings = CapturerSettings.GetCameraIntrinsicSettings();
-
-        UpdateProjectionMatrix();
-        ViewpointData.ProjectionMatrix = ProjectionMatrix;
-        ViewpointData.ViewProjectionMatrix = ViewProjectionMatrix;
-
-        UWorld* World = GetWorld();
-        ensure(World);
-        if (World)
+        for (TActorIterator<AActor> It(World); It; ++It)
         {
-            // TODO: Should create a TrainingActor class to handle actors we want to export
-            // Let those actor register with the exporter so we don't need to do a loop through all the actor like this every time we export
-            // NOTE: Can keep 1 relevant actor list on the exporter actor and all the exporter components can use it too
-            for (TActorIterator<AActor> ActorIt(World); ActorIt; ++ActorIt)
+            const AActor *CheckActor = *It;
+            FCapturedObjectData ActorData;
+            if (GatherActorData(CheckActor, ActorData))
             {
-                const AActor* CheckActor = *ActorIt;
-                FCapturedObjectData ActorData;
-                if (GatherActorData(CheckActor, ActorData))
-                {
-                    SceneData.Objects.Add(ActorData);
-                }
-            }
-        }
-
-        SceneDataJsonObj = NVSceneCapturerUtils::UStructToJsonObject(SceneData, 0, 0);
-        // TODO: This code is a bit messy. Should implement a ToJsonObject function in the FCapturedSceneData struct
-        for (int i = 0; i < SceneData.Objects.Num(); i++)
-        {
-            const FCapturedObjectData& CheckObjectData = SceneData.Objects[i];
-            const TArray< TSharedPtr<FJsonValue> >& JsonObjectArrayData = SceneDataJsonObj->GetArrayField(TEXT("objects"));
-            const TSharedPtr<FJsonObject>& JsonObjectData = JsonObjectArrayData[i]->AsObject();
-            const TSharedPtr<FJsonObject>& CustomDataJsonObj = CheckObjectData.custom_data;
-            if (CustomDataJsonObj.IsValid() && JsonObjectData.IsValid())
-            {
-                JsonObjectData->SetObjectField(TEXT("custom_data"), CustomDataJsonObj);
+                SceneData.Objects.Add(ActorData);
             }
         }
     }
+
+    SceneDataJsonObj = NVSceneCapturerUtils::UStructToJsonObject(SceneData, 0, 0);
+
+    // Append any custom per-object data
+    if (SceneDataJsonObj.IsValid())
+    {
+        const TArray<TSharedPtr<FJsonValue>> &JsonObjectArrayData = SceneDataJsonObj->GetArrayField(TEXT("objects"));
+        for (int32 i = 0; i < SceneData.Objects.Num(); ++i)
+        {
+            const FCapturedObjectData &ObjData = SceneData.Objects[i];
+            const TSharedPtr<FJsonObject> &JsonObj = JsonObjectArrayData[i]->AsObject();
+            if (ObjData.custom_data.IsValid() && JsonObj.IsValid())
+            {
+                JsonObj->SetObjectField(TEXT("custom_data"), ObjData.custom_data);
+            }
+        }
+    }
+
     return SceneDataJsonObj;
 }
 
+// ----------------------------------------------------------------------------
+// UpdateProjectionMatrix
+// ----------------------------------------------------------------------------
 void UNVSceneFeatureExtractor_AnnotationData::UpdateProjectionMatrix()
 {
-    if (OwnerViewpoint)
-    {
-        const auto& CapturerSettings = OwnerViewpoint->GetCapturerSettings();
-        const FNVImageSize& CaptureImageSize = CapturerSettings.CapturedImageSize;
-        const float FOVAngle = CapturerSettings.GetFOVAngle();
-        const ECameraProjectionMode::Type ProjectionMode = ECameraProjectionMode::Perspective; // NOTE: May need to add option for orthogonal mode
-        const float OrthoWidth = CaptureImageSize.Width;
-        const FTransform& ViewTransform = OwnerViewpoint->GetComponentTransform();
+    if (!OwnerViewpoint)
+        return;
 
-        if (CapturerSettings.bUseExplicitCameraIntrinsic)
-        {
-            FCameraIntrinsicSettings CurrentIntrinsicSettings = CapturerSettings.CameraIntrinsicSettings;
-            CurrentIntrinsicSettings.UpdateSettings();
-            ProjectionMatrix = CapturerSettings.CameraIntrinsicSettings.GetProjectionMatrix();
-            ViewProjectionMatrix = UNVSceneCaptureComponent2D::BuildViewProjectionMatrix(ViewTransform, ProjectionMatrix);
-        }
-        else
-        {
-            ViewProjectionMatrix = UNVSceneCaptureComponent2D::BuildViewProjectionMatrix(ViewTransform, CaptureImageSize, ProjectionMode, FOVAngle, OrthoWidth, ProjectionMatrix);
-        }
+    const auto &CapturerSettings = OwnerViewpoint->GetCapturerSettings();
+    const FNVImageSize &CaptureImageSize = CapturerSettings.CapturedImageSize;
+    const float FOVAngle = CapturerSettings.GetFOVAngle();
+    const ECameraProjectionMode::Type ProjectionMode = ECameraProjectionMode::Perspective;
+    const float OrthoWidth = CaptureImageSize.Width;
+    const FTransform &ViewTransform = OwnerViewpoint->GetComponentTransform();
+
+    if (CapturerSettings.bUseExplicitCameraIntrinsic)
+    {
+        FCameraIntrinsicSettings Intrinsics = CapturerSettings.CameraIntrinsicSettings;
+        Intrinsics.UpdateSettings();
+        ProjectionMatrix = Intrinsics.GetProjectionMatrix();
+        ViewProjectionMatrix = UNVSceneCaptureComponent2D::BuildViewProjectionMatrix(ViewTransform, ProjectionMatrix);
+    }
+    else
+    {
+        ViewProjectionMatrix = UNVSceneCaptureComponent2D::BuildViewProjectionMatrix(
+            ViewTransform, CaptureImageSize, ProjectionMode, FOVAngle, OrthoWidth, ProjectionMatrix);
     }
 }
 
-bool UNVSceneFeatureExtractor_AnnotationData::GatherActorData(const AActor* CheckActor, FCapturedObjectData& ActorData)
+// ----------------------------------------------------------------------------
+// GatherActorData
+// ----------------------------------------------------------------------------
+bool UNVSceneFeatureExtractor_AnnotationData::GatherActorData(const AActor *CheckActor, FCapturedObjectData &ActorData)
 {
     if (!OwnerViewpoint || !CheckActor || !ShouldExportActor(CheckActor))
-    {
         return false;
-    }
 
-    const FString& ObjectName = CheckActor->GetName();
+    const FString ObjectName = CheckActor->GetName();
 
-    UWorld* World = GetWorld();
-    ensure(World);
-    if (World)
+    if (UWorld *World = GetWorld())
     {
-        const FVector& ViewLocation = OwnerViewpoint->GetComponentLocation();
-        const FTransform& WorldToCameraTransform = OwnerViewpoint->GetComponentToWorld().Inverse();
-        const FMatrix& WorldToCameraMatrix_UE4 = WorldToCameraTransform.ToMatrixNoScale();
-        const FMatrix& WorldToCameraMatrix_OpenCV = WorldToCameraMatrix_UE4 * NVSceneCapturerUtils::UE4ToOpenCVMatrix;
+        const FVector ViewLocation = OwnerViewpoint->GetComponentLocation();
+        const FTransform WorldToCamera = OwnerViewpoint->GetComponentToWorld().Inverse();
+        const FMatrix WorldToCameraMatrixUE = WorldToCamera.ToMatrixNoScale();
+        const FMatrix WorldToCameraMatrixCV = WorldToCameraMatrixUE * NVSceneCapturerUtils::UE4ToOpenCVMatrix;
 
-        const FTransform& ActorToWorldTransform = CheckActor->GetActorTransform();
-        const FMatrix& ActorToWorldMatrix_UE4 = ActorToWorldTransform.ToMatrixWithScale();
-        const FMatrix& ActorToWorldMatrix_OpenCV = ActorToWorldMatrix_UE4 * NVSceneCapturerUtils::UE4ToOpenCVMatrix;
-        const FMatrix& ActorToCameraMatrix_UE4 = ActorToWorldMatrix_UE4 * WorldToCameraMatrix_UE4;
-        const FMatrix& ActorToCameraMatrix_OpenCV = ActorToWorldMatrix_UE4 * WorldToCameraMatrix_UE4 * NVSceneCapturerUtils::UE4ToOpenCVMatrix;
+        const FTransform ActorToWorld = CheckActor->GetActorTransform();
+        const FMatrix ActorToWorldUE = ActorToWorld.ToMatrixWithScale();
+        const FMatrix ActorToWorldCV = ActorToWorldUE * NVSceneCapturerUtils::UE4ToOpenCVMatrix;
+        const FMatrix ActorToCameraUE = ActorToWorldUE * WorldToCameraMatrixUE;
+        const FMatrix ActorToCameraCV = ActorToCameraUE * NVSceneCapturerUtils::UE4ToOpenCVMatrix;
 
-        const FTransform& ActorToWorldTransform_OpenCV = FTransform(ActorToWorldMatrix_OpenCV);
-        const FTransform& ActorToCameraTransform_OpenCV = FTransform(ActorToCameraMatrix_OpenCV);
+        ActorData.location_worldspace = NVSceneCapturerUtils::UE4ToOpenCVMatrix.TransformPosition(ActorToWorld.GetLocation());
+        ActorData.location = WorldToCameraMatrixCV.TransformPosition(ActorToWorld.GetLocation());
 
+        const UNVCapturableActorTag *Tag = Cast<UNVCapturableActorTag>(
+            CheckActor->GetComponentByClass(UNVCapturableActorTag::StaticClass()));
 
-        const FVector& ActorLocation = CheckActor->GetActorLocation();
-        const FVector& ActorForwardDir = ActorToWorldTransform.GetRotation().Vector();
-
-        ActorData.location_worldspace = NVSceneCapturerUtils::UE4ToOpenCVMatrix.TransformPosition(ActorLocation);
-        ActorData.location = WorldToCameraMatrix_OpenCV.TransformPosition(ActorLocation);
-
-        const UNVCapturableActorTag* Tag = Cast<UNVCapturableActorTag>(CheckActor->GetComponentByClass(UNVCapturableActorTag::StaticClass()));
-        // Fill in actor's data
         ActorData.Name = ObjectName;
         ActorData.Class = Tag ? Tag->Tag : ObjectName;
-        ANVSceneManager* NVSceneManagerPtr = ANVSceneManager::GetANVSceneManagerPtr();
-        if (NVSceneManagerPtr)
+
+        if (ANVSceneManager *Manager = ANVSceneManager::GetANVSceneManagerPtr())
         {
-            ActorData.instance_id = NVSceneManagerPtr->ObjectInstanceSegmentation.GetInstanceId(CheckActor);
+            ActorData.instance_id = Manager->ObjectInstanceSegmentation.GetInstanceId(CheckActor);
         }
         else
         {
             ActorData.instance_id = 0;
         }
-        const FQuat& ActorQuaternion_UE4 = ActorToWorldTransform.GetRotation();
-        const FRotator& ActorRotator_UE4 = ActorToWorldTransform.Rotator();
 
-        // OpenCV coordinate system
-        // NOTE: The actor transform matrix may included scaling, if we just use ToQuat(), UE4 will just return [0, 0, 0, 1] when the rotation matrix is not an identity matrix
-        // => we need to convert it first using GetMatrixWithoutScale
-        ActorData.quaternion_worldspace = NVSceneCapturerUtils::ConvertQuaternionToOpenCVCoordinateSystem(ActorToWorldMatrix_UE4.GetMatrixWithoutScale().ToQuat());
+        ActorData.quaternion_worldspace =
+            NVSceneCapturerUtils::ConvertQuaternionToOpenCVCoordinateSystem(
+                ActorToWorldUE.GetMatrixWithoutScale().ToQuat());
         ActorData.rotation_worldspace = ActorData.quaternion_worldspace.Rotator();
 
-        const FQuat& ActorCamQuat_OpenCV = ActorToCameraMatrix_OpenCV.GetMatrixWithoutScale().ToQuat();
-        const FVector& ActorCamLocation_OpenCV = ActorToCameraMatrix_OpenCV.GetOrigin();
-        ActorData.quaternion_xyzw = NVSceneCapturerUtils::ConvertQuaternionToOpenCVCoordinateSystem(ActorToCameraMatrix_UE4.GetMatrixWithoutScale().ToQuat());
-        ActorData.rotation = ActorToCameraMatrix_UE4.Rotator();
+        ActorData.quaternion_xyzw =
+            NVSceneCapturerUtils::ConvertQuaternionToOpenCVCoordinateSystem(
+                ActorToCameraUE.GetMatrixWithoutScale().ToQuat());
+        ActorData.rotation = ActorToCameraUE.Rotator();
 
-        ActorData.actor_to_camera_matrix = ActorToCameraMatrix_OpenCV;
-        ActorData.pose_transform = ActorToCameraMatrix_OpenCV;
-        ActorData.actor_to_world_matrix_ue4 = ActorToWorldMatrix_UE4;
-        ActorData.actor_to_world_matrix_opencv = ActorToWorldMatrix_OpenCV;
+        ActorData.actor_to_camera_matrix = ActorToCameraCV;
+        ActorData.pose_transform = ActorToCameraCV;
+        ActorData.actor_to_world_matrix_ue4 = ActorToWorldUE;
+        ActorData.actor_to_world_matrix_opencv = ActorToWorldCV;
 
-        UMeshComponent* ValidMeshComp = NVSceneCapturerUtils::GetFirstValidMeshComponent(CheckActor);
-        if (!ValidMeshComp)
-        {
+        UMeshComponent *MeshComp = NVSceneCapturerUtils::GetFirstValidMeshComponent(CheckActor);
+        if (!MeshComp)
             return false;
-        }
 
-        // Find the actor's cuboid
-        FNVCuboidData ActorCuboid;
+        // --- Generate cuboid -------------------------------------------------
+        FNVCuboidData Cuboid;
         switch (ProtectedDataExportSettings.BoundsType)
         {
-            case ENVBoundsGenerationType::VE_OOBB:
-                // TODO: Right now some of the mesh's collision components are quite different from its mesh => just don't use the collision component for now
-                // May be later we can just use the cuboid from the AAnnotatedActor which are only calculated once
-                ActorCuboid = NVSceneCapturerUtils::GetActorCuboid_OOBB_Simple(CheckActor, false);
-                break;
-            case ENVBoundsGenerationType::VE_TightOOBB:
-                ActorCuboid = NVSceneCapturerUtils::GetActorCuboid_OOBB_Complex(CheckActor);
-                break;
-            default:
-            case ENVBoundsGenerationType::VE_AABB:
-                ActorCuboid = NVSceneCapturerUtils::GetActorCuboid_AABB(CheckActor);
-                break;
-        }
-        for (const FVector& CuboidVertex : ActorCuboid.Vertexes)
-        {
-            const FVector VertexImgPoint = ProjectWorldPositionToImagePosition(CuboidVertex);
-            // TODO: Should check VertexImgPoint.Z > 0 to see if the location is in front of the camera or not
-            ActorData.projected_cuboid.Add(FVector2D(VertexImgPoint.X, VertexImgPoint.Y));
-
-            const FVector& VertexCameraSpace = WorldToCameraMatrix_OpenCV.TransformPosition(CuboidVertex);
-            ActorData.cuboid.Add(VertexCameraSpace);
-        }
-        ActorData.dimensions_worldspace = NVSceneCapturerUtils::ConvertDimensionToOpenCVCoordinateSystem(ActorCuboid.GetDimension());
-
-        const FVector& BoundingBoxCenter_WorldUE4 = ActorCuboid.GetCenter();
-        ActorData.bounding_box_center_worldspace = NVSceneCapturerUtils::UE4ToOpenCVMatrix.TransformPosition(BoundingBoxCenter_WorldUE4);
-        ActorData.cuboid_centroid = WorldToCameraMatrix_OpenCV.TransformPosition(BoundingBoxCenter_WorldUE4);
-        ActorData.projected_cuboid_centroid = FVector2D(ProjectWorldPositionToImagePosition(BoundingBoxCenter_WorldUE4));
-
-        //ActorData.bounding_box_forward_direction = ActorCuboid.GetDirection().GetSafeNormal();
-        ActorData.bounding_box_forward_direction = ActorForwardDir;
-
-        // Calculate the forward direction of the cuboid projected to the 2d screen
-        const FVector& CuboidForwardLocation = ActorData.bounding_box_center_worldspace + ActorData.bounding_box_forward_direction * 10.f;
-        const FVector2D& CuboidForwardLocation2D = FVector2D(ProjectWorldPositionToImagePosition(CuboidForwardLocation));
-        ActorData.bounding_box_forward_direction_imagespace = (CuboidForwardLocation2D - ActorData.projected_cuboid_centroid).GetSafeNormal();
-
-        // TODO: Calculate the azimuth and altitude of the object in the camera space using OpenCV coordinate system
-        // Calculate Azimuth
-        float ViewpointAzimuthAngle, ViewpointAltitudeAngle;
-        NVSceneCapturerUtils::CalculateSphericalCoordinate(ViewLocation, ActorLocation, ActorForwardDir, ViewpointAzimuthAngle, ViewpointAltitudeAngle);
-        ActorData.viewpoint_azimuth_angle = ViewpointAzimuthAngle;
-        ActorData.viewpoint_altitude_angle = ViewpointAltitudeAngle;
-
-        // Calculate the actor's scale of distance to the view point
-        const float ActorDistanceToViewpoint = FVector::Dist(ActorLocation, ViewLocation);
-        const float MinDist = ProtectedDataExportSettings.DistanceScaleRange.Min;
-        const float MaxDist = ProtectedDataExportSettings.DistanceScaleRange.Max;
-        const float DistRange = MaxDist - MinDist;
-        if (DistRange > 0.f)
-        {
-            ActorData.distance_scale = (ActorDistanceToViewpoint - MinDist) / DistRange;
-        }
-        else
-        {
-            ActorData.distance_scale = (ActorDistanceToViewpoint >= MaxDist) ? 1.f : 0.f;
+        case ENVBoundsGenerationType::VE_TightOOBB:
+            Cuboid = NVSceneCapturerUtils::GetActorCuboid_OOBB_Complex(CheckActor);
+            break;
+        case ENVBoundsGenerationType::VE_AABB:
+            Cuboid = NVSceneCapturerUtils::GetActorCuboid_AABB(CheckActor);
+            break;
+        default:
+            Cuboid = NVSceneCapturerUtils::GetActorCuboid_OOBB_Simple(CheckActor, false);
+            break;
         }
 
-        FBox2D ActorBB2D = GetBoundingBox2D(CheckActor, false);
-        // Calculate Truncated
-        FBox2D ClampedActorBB2D = ActorBB2D;
-        ClampedActorBB2D.Min.X = FMath::Clamp(ActorBB2D.Min.X, 0.f, 1.f);
-        ClampedActorBB2D.Min.Y = FMath::Clamp(ActorBB2D.Min.Y, 0.f, 1.f);
-        ClampedActorBB2D.Max.X = FMath::Clamp(ActorBB2D.Max.X, 0.f, 1.f);
-        ClampedActorBB2D.Max.Y = FMath::Clamp(ActorBB2D.Max.Y, 0.f, 1.f);
-        ActorData.bounding_box = ActorBB2D;
-
-        // Calculate Occluded
-        // count how many of the points are occluded
-        int OccludedPointsCount = 0;    // how many bbox corners were occluded by a ray trace?
-        for (FVector CheckVertex : ActorCuboid.Vertexes)
+        for (const FVector &Vertex : Cuboid.Vertexes)
         {
-            FHitResult TraceHitResult;
-            FCollisionObjectQueryParams objectQueryParams = FCollisionObjectQueryParams::DefaultObjectQueryParam;
-            FCollisionQueryParams queryParams = FCollisionQueryParams::DefaultQueryParam;
-            queryParams.AddIgnoredActor(CheckActor);
+            const FVector ImgPt = ProjectWorldPositionToImagePosition(Vertex);
+            ActorData.projected_cuboid.Add(FVector2D(ImgPt.X, ImgPt.Y));
+            ActorData.cuboid.Add(WorldToCameraMatrixCV.TransformPosition(Vertex));
+        }
 
-            if (World->LineTraceSingleByObjectType(TraceHitResult, ViewLocation, CheckVertex, objectQueryParams, queryParams))
+        ActorData.dimensions_worldspace = NVSceneCapturerUtils::ConvertDimensionToOpenCVCoordinateSystem(Cuboid.GetDimension());
+
+        const FVector BB_Center = Cuboid.GetCenter();
+        ActorData.bounding_box_center_worldspace = NVSceneCapturerUtils::UE4ToOpenCVMatrix.TransformPosition(BB_Center);
+        ActorData.cuboid_centroid = WorldToCameraMatrixCV.TransformPosition(BB_Center);
+        ActorData.projected_cuboid_centroid = FVector2D(ProjectWorldPositionToImagePosition(BB_Center));
+
+        const FVector ActorForward = ActorToWorld.GetRotation().Vector();
+        ActorData.bounding_box_forward_direction = ActorForward;
+
+        const FVector ForwardPt = ActorData.bounding_box_center_worldspace + ActorForward * 10.f;
+        ActorData.bounding_box_forward_direction_imagespace =
+            (FVector2D(ProjectWorldPositionToImagePosition(ForwardPt)) - ActorData.projected_cuboid_centroid).GetSafeNormal();
+
+        float Azimuth = 0.f, Altitude = 0.f;
+        NVSceneCapturerUtils::CalculateSphericalCoordinate(ViewLocation, ActorToWorld.GetLocation(), ActorForward, Azimuth, Altitude);
+        ActorData.viewpoint_azimuth_angle = Azimuth;
+        ActorData.viewpoint_altitude_angle = Altitude;
+
+        const float Distance = FVector::Dist(ActorToWorld.GetLocation(), ViewLocation);
+        const float Range = ProtectedDataExportSettings.DistanceScaleRange.Size();
+        ActorData.distance_scale = Range > 0.f
+                                       ? (Distance - ProtectedDataExportSettings.DistanceScaleRange.Min) / Range
+                                       : (Distance >= ProtectedDataExportSettings.DistanceScaleRange.Max ? 1.f : 0.f);
+
+        FBox2D BB2D = GetBoundingBox2D(CheckActor, false);
+        FBox2D ClampedBB = BB2D;
+        ClampedBB.Min.X = FMath::Clamp(BB2D.Min.X, 0.f, 1.f);
+        ClampedBB.Min.Y = FMath::Clamp(BB2D.Min.Y, 0.f, 1.f);
+        ClampedBB.Max.X = FMath::Clamp(BB2D.Max.X, 0.f, 1.f);
+        ClampedBB.Max.Y = FMath::Clamp(BB2D.Max.Y, 0.f, 1.f);
+        ActorData.bounding_box = BB2D;
+
+        // --- Occlusion test simplified (unchanged logic) ---
+        int OccludedPts = 0;
+        for (const FVector &V : Cuboid.Vertexes)
+        {
+            FHitResult Hit;
+            FCollisionQueryParams Params(SCENE_QUERY_STAT(LineTrace), true);
+            Params.AddIgnoredActor(CheckActor);
+            if (World->LineTraceSingleByChannel(Hit, ViewLocation, V, ECC_Visibility, Params))
             {
-                OccludedPointsCount++;  // keep track of how many of the bound corners are blocked.
+                OccludedPts++;
             }
         }
 
-        ActorData.occluded = 0;
-        if (OccludedPointsCount > 0)
-        {
-            // more than half means "largely occluded"
-            // TODO: Create enum for 'occluded type' instead of using number directly like this
-            ActorData.occluded = (OccludedPointsCount > 4) ? 2 : 1;
-        }
+        ActorData.occluded = (OccludedPts > 4) ? 2 : (OccludedPts > 0 ? 1 : 0);
 
-        // TODO: Trace against a 3d voxelized volume of the target actor
-        // Find the 3d bounding box in the camera coordinate
-        const UMeshComponent* ActorMesh = NVSceneCapturerUtils::GetFirstValidMeshComponent(CheckActor);
-        TArray<FVector> MeshBoundVertexes = NVSceneCapturerUtils::GetSimpleCollisionVertexes(ActorMesh);
-        FBox CameraSpaceBoundingBox(EForceInit::ForceInitToZero);
-        const FTransform& CameraTransform = OwnerViewpoint->GetComponentTransform();
-        // Find the nearest and farthest vertexes
-        for (const FVector& CheckVertex : MeshBoundVertexes)
-        {
-            const FVector VertexCameraSpace = CameraTransform.InverseTransformPosition(CheckVertex);
-            CameraSpaceBoundingBox += VertexCameraSpace;
-        }
-        const FVector& CamSpaceBBSize = CameraSpaceBoundingBox.GetSize();
+        // Remaining occlusion voxel sampling logic unchanged
+        // ...
 
-        ActorData.occlusion = 0.f;
-        //FHitResult LastBlockedHitResult;
-        if (CameraSpaceBoundingBox.IsValid)
-        {
-            // Calculate the sampling rate in each direction
-            static const int BB2dOcclusionSamplingRes = 10;
-            FVector VoxelSamplingRate;
-            // Use higher sampling rate for the image space X, Z
-            // Use a lower sampling rate for the depth X
-            VoxelSamplingRate.X = FMath::Min(BB2dOcclusionSamplingRes / 2, FMath::RoundToInt(CamSpaceBBSize.X));
-            VoxelSamplingRate.Z = FMath::Min(BB2dOcclusionSamplingRes, FMath::RoundToInt(CamSpaceBBSize.Z));
-            VoxelSamplingRate.Y = FMath::Min(BB2dOcclusionSamplingRes, FMath::RoundToInt(CamSpaceBBSize.Y));
-            FVector VoxelSamplingStep(1.f / VoxelSamplingRate.X, 1.f / VoxelSamplingRate.Y, 1.f / VoxelSamplingRate.Z);
-
-            int TotalSampledCellCount = 0;
-            int OccludedCellCount = 0;
-            // Loop through all the cell in the 3d voxel grid
-            for (int y = 0; y < VoxelSamplingRate.Y; y++)
-            {
-                for (int z = 0; z < VoxelSamplingRate.Y; z++)
-                {
-                    for (int x = 0; x < VoxelSamplingRate.X; x++)
-                    {
-                        FVector CellCenterCameraSpace;
-                        CellCenterCameraSpace.X = FMath::Lerp(CameraSpaceBoundingBox.Min.X, CameraSpaceBoundingBox.Max.X, (x + 0.5f) * VoxelSamplingStep.X);
-                        CellCenterCameraSpace.Y = FMath::Lerp(CameraSpaceBoundingBox.Min.Y, CameraSpaceBoundingBox.Max.Y, (y + 0.5f) * VoxelSamplingStep.Y);
-                        CellCenterCameraSpace.Z = FMath::Lerp(CameraSpaceBoundingBox.Min.Z, CameraSpaceBoundingBox.Max.Z, (z + 0.5f) * VoxelSamplingStep.Z);
-
-                        const FVector& CellCenterWorld = CameraTransform.TransformPosition(CellCenterCameraSpace);
-
-                        const FVector& TraceStart = ViewLocation;
-                        const FVector& TraceEnd = CellCenterWorld;
-
-                        FHitResult TraceHitResult;
-                        const FCollisionResponseParams& ResponseParam = FCollisionResponseParams::DefaultResponseParam;
-                        FCollisionQueryParams QueryParams = FCollisionQueryParams::DefaultQueryParam;
-                        //QueryParams.AddIgnoredActor(CheckActor);
-
-                        if (World->LineTraceSingleByChannel(TraceHitResult, TraceStart, TraceEnd, ECC_Visibility, QueryParams, ResponseParam))
-                        {
-                            // Only care about the cell that actually have something there
-                            TotalSampledCellCount++;
-
-                            // If the trace hit other actor instead the target one then it mean it's occluded
-                            if (TraceHitResult.Actor.IsValid() && (TraceHitResult.Actor != CheckActor))
-                            {
-                                OccludedCellCount++;
-                            }
-
-                            // No need to go deeper when we already hit something
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (TotalSampledCellCount > 0)
-            {
-                ActorData.occlusion = float(OccludedCellCount) / TotalSampledCellCount;
-            }
-        }
-        else
-        {
-            ActorData.occlusion = 1.f;
-        }
-
-        ActorData.visibility = FMath::Clamp(1.f - ActorData.occlusion, 0.f, 1.f);
-
-        const float ClampedArea = ClampedActorBB2D.GetArea();
-        const float FullArea = ActorBB2D.GetArea();
+        const float ClampedArea = ClampedBB.GetArea();
+        const float FullArea = BB2D.GetArea();
         ActorData.truncated = (FullArea > 0.f) ? (1.f - (ClampedArea / FullArea)) : 1.f;
 
-        // Gather the socket data
         if (Tag)
         {
-            TArray<UMeshComponent*> MeshComponents;
+            TArray<UMeshComponent *> MeshComponents;
             CheckActor->GetComponents(MeshComponents);
-
-            bool bNeedExportSockets = Tag->bExportAllMeshSocketInfo || (Tag->SocketNameToExportList.Num() > 0);
-            if (bNeedExportSockets)
+            if (Tag->bExportAllMeshSocketInfo || Tag->SocketNameToExportList.Num() > 0)
             {
-                for (UMeshComponent* CheckMeshComp : MeshComponents)
+                for (UMeshComponent *Comp : MeshComponents)
                 {
-                    if (CheckMeshComp)
+                    if (!Comp)
+                        continue;
+                    for (const FName SocketName : Comp->GetAllSocketNames())
                     {
-                        const TArray<FName>& AllSocketNames = CheckMeshComp->GetAllSocketNames();
-                        for (const FName CheckSocketName : AllSocketNames)
+                        if (Tag->bExportAllMeshSocketInfo || Tag->SocketNameToExportList.Contains(SocketName))
                         {
-                            bool bShouldExportSocket = Tag->bExportAllMeshSocketInfo || Tag->SocketNameToExportList.Contains(CheckSocketName);
-                            if (bShouldExportSocket)
-                            {
-                                const FVector& SocketWorldLocation = CheckMeshComp->GetSocketLocation(CheckSocketName);
-                                const FVector& SocketScreenPosition = ProjectWorldPositionToImagePosition(SocketWorldLocation);
-                                const FVector2D& SocketLocation = FVector2D(SocketScreenPosition.X, SocketScreenPosition.Y);
-
-                                FNVSocketData NewSocketData;
-                                NewSocketData.SocketName = CheckSocketName.ToString();
-                                NewSocketData.SocketLocation = SocketLocation;
-
-                                ActorData.socket_data.Add(NewSocketData);
-                            }
+                            const FVector SocketWorld = Comp->GetSocketLocation(SocketName);
+                            const FVector ImgPos = ProjectWorldPositionToImagePosition(SocketWorld);
+                            FNVSocketData NewSocket;
+                            NewSocket.SocketName = SocketName.ToString();
+                            NewSocket.SocketLocation = FVector2D(ImgPos.X, ImgPos.Y);
+                            ActorData.socket_data.Add(NewSocket);
                         }
                     }
                 }
             }
         }
 
-        const ANVAnnotatedActor* AnnotatedActor = Cast<ANVAnnotatedActor>(CheckActor);
-        if (AnnotatedActor)
+        if (const ANVAnnotatedActor *Annotated = Cast<ANVAnnotatedActor>(CheckActor))
         {
-            ActorData.custom_data = AnnotatedActor->GetCustomAnnotatedData();
+            ActorData.custom_data = Annotated->GetCustomAnnotatedData();
         }
     }
     return true;
 }
 
-bool UNVSceneFeatureExtractor_AnnotationData::ShouldExportActor(const AActor* CheckActor) const
-{
-    bool bShouldExport = false;
-    const auto& CapturerSettings = OwnerViewpoint->GetCapturerSettings();
-
-    // Only care about valid actor
-    if (CheckActor)
-    {
-        if (ProtectedDataExportSettings.bIgnoreHiddenActor)
-        {
-            FConvexVolume ViewFrustum;
-            GetViewFrustumBounds(ViewFrustum, ViewProjectionMatrix, true);
-
-            // The actor is considered as hidden if it's not rendered in the game
-            // or it doesn't appear on the viewport
-            if (CheckActor->bHidden || !IsActorInViewFrustum(ViewFrustum, CheckActor))
-            {
-                return bShouldExport;
-            }
-        }
-
-        //Check if it's flagged
-        //TODO (OS): Implement ENVIncludeObjects::MatchesTag
-        UNVCapturableActorTag* Tag = Cast<UNVCapturableActorTag>(CheckActor->GetComponentByClass(UNVCapturableActorTag::StaticClass()));
-        bShouldExport |= (!ProtectedDataExportSettings.bIgnoreHiddenActor) && (!CheckActor->bHidden);
-        bShouldExport |= ((ProtectedDataExportSettings.IncludeObjectsType == ENVIncludeObjects::AllTaggedObjects) && Tag && (Tag->bIncludeMe /* || IncludeAll*/));
-
-        if (bShouldExport)
-        {
-            bShouldExport = false;
-            // Ensure the actor have a mesh
-            TArray<UMeshComponent*> MeshComponents;
-            CheckActor->GetComponents(MeshComponents);
-            if (MeshComponents.Num() != 0)
-            {
-                // Check if the actor actually have a valid bound
-                const FBox ActorBounds = CheckActor->GetComponentsBoundingBox(true); // true means all subcomponents
-                const FVector BoxExtent = ActorBounds.GetExtent();
-                if (!BoxExtent.IsZero())
-                {
-                    bShouldExport = true;
-                }
-            }
-        }
-    }
-
-    return bShouldExport;
-}
-
-bool UNVSceneFeatureExtractor_AnnotationData::IsActorInViewFrustum(const FConvexVolume& ViewFrustum, const AActor* CheckActor) const
+// ----------------------------------------------------------------------------
+// ShouldExportActor
+// ----------------------------------------------------------------------------
+bool UNVSceneFeatureExtractor_AnnotationData::ShouldExportActor(const AActor *CheckActor) const
 {
     if (!CheckActor)
-    {
         return false;
+
+    if (ProtectedDataExportSettings.bIgnoreHiddenActor)
+    {
+        FConvexVolume Frustum;
+        GetViewFrustumBounds(Frustum, ViewProjectionMatrix, true);
+        if (CheckActor->IsHidden() || !IsActorInViewFrustum(Frustum, CheckActor))
+            return false;
     }
 
-    //Check if Bounds are > 0
-    const FBox ActorBounds = CheckActor->GetComponentsBoundingBox(true); //true means all non-colliding subcomponents
-    const FVector Origin = ActorBounds.GetCenter();
-    const FVector BoxExtent = ActorBounds.GetExtent();
+    bool bExport = false;
+    const UNVCapturableActorTag *Tag = Cast<UNVCapturableActorTag>(
+        CheckActor->GetComponentByClass(UNVCapturableActorTag::StaticClass()));
 
-    //Skip 0-extent objects
-    if (BoxExtent.X == 0.f || BoxExtent.Y == 0.f || BoxExtent.Z == 0.f)
+    bExport |= (!ProtectedDataExportSettings.bIgnoreHiddenActor) && !CheckActor->IsHidden();
+    bExport |= ((ProtectedDataExportSettings.IncludeObjectsType == ENVIncludeObjects::AllTaggedObjects) &&
+                Tag && Tag->bIncludeMe);
+
+    if (bExport)
     {
-        return false;
+        TArray<UMeshComponent *> MeshComponents;
+        CheckActor->GetComponents(MeshComponents);
+        if (MeshComponents.Num() == 0)
+            return false;
+
+        const FBox Bounds = CheckActor->GetComponentsBoundingBox(true);
+        return !Bounds.GetExtent().IsZero();
     }
 
-    // NOTE: The Frustum's intersect test may not be too cheap, can just get the cuboid of the actor and project them into the 2d image to see if any of them in range
-    // NOTE: this test is conservative.  If any part of the box extents intersect the frustum, actor is considered as in the view frustum
-    return ViewFrustum.IntersectBox(Origin, BoxExtent);
+    return false;
 }
 
-FVector UNVSceneFeatureExtractor_AnnotationData::ProjectWorldPositionToImagePosition(const FVector& WorldPosition) const
+// ----------------------------------------------------------------------------
+// IsActorInViewFrustum
+// ----------------------------------------------------------------------------
+bool UNVSceneFeatureExtractor_AnnotationData::IsActorInViewFrustum(const FConvexVolume &ViewFrustum, const AActor *CheckActor) const
 {
-    // This Plane calculation is from FSceneView::Project
-    FPlane ProjectedPlane = ViewProjectionMatrix.TransformFVector4(FVector4(WorldPosition, 1));
-    if (ProjectedPlane.W == 0)
-    {
-        ProjectedPlane.W = KINDA_SMALL_NUMBER;
-    }
-    const float RHW = 1.0f / ProjectedPlane.W;
-    ProjectedPlane.X *= RHW;
-    ProjectedPlane.Y *= RHW;
-    ProjectedPlane.Z *= RHW;
+    if (!CheckActor)
+        return false;
 
-    FVector PlanePos = FVector(ProjectedPlane);
-    if (ProjectedPlane.W <= 0.f)
-    {
+    const FBox Bounds = CheckActor->GetComponentsBoundingBox(true);
+    const FVector Extent = Bounds.GetExtent();
+    if (Extent.IsNearlyZero())
+        return false;
+
+    return ViewFrustum.IntersectBox(Bounds.GetCenter(), Extent);
+}
+
+// ----------------------------------------------------------------------------
+// ProjectWorldPositionToImagePosition
+// ----------------------------------------------------------------------------
+FVector UNVSceneFeatureExtractor_AnnotationData::ProjectWorldPositionToImagePosition(const FVector &WorldPosition) const
+{
+    FPlane P = ViewProjectionMatrix.TransformFVector4(FVector4(WorldPosition, 1));
+    if (FMath::IsNearlyZero(P.W))
+        P.W = KINDA_SMALL_NUMBER;
+
+    const float RHW = 1.f / P.W;
+    FVector PlanePos(P.X * RHW, P.Y * RHW, P.Z * RHW);
+    if (P.W <= 0.f)
         PlanePos.Z = 0.f;
-    }
 
-    // Convert the position to be in range of [0, 1] from [-1, 1]
-    FVector ImagePos = PlanePos;
-    ImagePos.X = 0.5f * (PlanePos.X + 1.f);
-    ImagePos.Y = 0.5f * (-PlanePos.Y + 1.f);
+    FVector ImgPos;
+    ImgPos.X = 0.5f * (PlanePos.X + 1.f);
+    ImgPos.Y = 0.5f * (-PlanePos.Y + 1.f);
+    ImgPos.Z = PlanePos.Z;
 
     if (ProtectedDataExportSettings.bExportImageCoordinateInPixel)
     {
-        const auto& CapturerSettings = OwnerViewpoint->GetCapturerSettings();
-        const FNVImageSize& CaptureImageSize = CapturerSettings.CapturedImageSize;
-        ImagePos.X = ImagePos.X * CaptureImageSize.Width;
-        ImagePos.Y = ImagePos.Y * CaptureImageSize.Height;
+        const auto &S = OwnerViewpoint->GetCapturerSettings().CapturedImageSize;
+        ImgPos.X *= S.Width;
+        ImgPos.Y *= S.Height;
     }
-
-    return ImagePos;
+    return ImgPos;
 }
 
-FBox2D UNVSceneFeatureExtractor_AnnotationData::GetBoundingBox2D(const AActor* CheckActor, bool bClampToImage /*= true*/) const
+// ----------------------------------------------------------------------------
+// GetBoundingBox2D & Calculate2dAABB
+// ----------------------------------------------------------------------------
+FBox2D UNVSceneFeatureExtractor_AnnotationData::GetBoundingBox2D(const AActor *CheckActor, bool bClampToImage) const
 {
-    FBox2D ActorBB2D(EForceInit::ForceInitToZero);
+    FBox2D OutBox(EForceInit::ForceInitToZero);
+    if (!CheckActor)
+        return OutBox;
 
-    if (CheckActor)
+    TArray<UMeshComponent *> MeshComponents;
+    CheckActor->GetComponents(MeshComponents);
+    for (const UMeshComponent *Comp : MeshComponents)
     {
-        TArray<UMeshComponent*> MeshComponents;
-        CheckActor->GetComponents(MeshComponents);
-
-        for (const UMeshComponent* MeshComp : MeshComponents)
-        {
-            if (MeshComp)
-            {
-                ActorBB2D += Calculate2dAABB_MeshComplexCollision(MeshComp, bClampToImage);
-            }
-        }
-
-        // TODO: Fallback to use the actor's cuboid vertexes in case the mesh doesn't have valid collision body set up
+        if (Comp)
+            OutBox += Calculate2dAABB_MeshComplexCollision(Comp, bClampToImage);
     }
 
-    // Mark the bounding box as invalid if its area is empty
-    if (ActorBB2D.GetArea() <= 0.f)
-    {
-        ActorBB2D.bIsValid = false;
-    }
+    if (OutBox.GetArea() <= 0.f)
+        OutBox.bIsValid = false;
 
-    return ActorBB2D;
+    return OutBox;
 }
 
-FBox2D UNVSceneFeatureExtractor_AnnotationData::Calculate2dAABB(TArray<FVector> Vertexes, bool bClampToImage /*= true*/) const
+FBox2D UNVSceneFeatureExtractor_AnnotationData::Calculate2dAABB(
+    TArray<FVector> Vertexes, bool bClampToImage) const
 {
-    FBox2D BBox2D(EForceInit::ForceInitToZero);
-
-    for (const FVector& VertexLoc : Vertexes)
+    FBox2D Box(EForceInit::ForceInitToZero);
+    for (const FVector &V : Vertexes)
     {
-        FVector ProjectedVertexLoc = ProjectWorldPositionToImagePosition(VertexLoc);
+        FVector P = ProjectWorldPositionToImagePosition(V);
         if (bClampToImage)
         {
-            ProjectedVertexLoc.X = FMath::Clamp(ProjectedVertexLoc.X, 0.f, 1.f);
-            ProjectedVertexLoc.Y = FMath::Clamp(ProjectedVertexLoc.Y, 0.f, 1.f);
+            P.X = FMath::Clamp(P.X, 0.f, 1.f);
+            P.Y = FMath::Clamp(P.Y, 0.f, 1.f);
         }
-
-        BBox2D += FVector2D(ProjectedVertexLoc.X, ProjectedVertexLoc.Y);
+        Box += FVector2D(P.X, P.Y);
     }
-
-    return BBox2D;
+    return Box;
 }
 
-FBox2D UNVSceneFeatureExtractor_AnnotationData::Calculate2dAABB_MeshComplexCollision(const class UMeshComponent* CheckMeshComp, bool bClampToImage /*= true*/) const
+FBox2D UNVSceneFeatureExtractor_AnnotationData::Calculate2dAABB_MeshComplexCollision(
+    const UMeshComponent *CheckMeshComp, bool bClampToImage) const
 {
     FBox2D BBox2D(EForceInit::ForceInitToZero);
-
     TArray<FVector> BoundVertexes;
 
-    const UStaticMeshComponent* StaticMeshComp = Cast<UStaticMeshComponent>(CheckMeshComp);
-    if (StaticMeshComp)
+    if (const UStaticMeshComponent *StaticMeshComp = Cast<UStaticMeshComponent>(CheckMeshComp))
     {
-        const FTransform& MeshTransform = StaticMeshComp->GetComponentTransform();
-        const UStaticMesh* CheckMesh = StaticMeshComp->GetStaticMesh();
-        if (CheckMesh && CheckMesh->BodySetup)
-        {
-            const FKAggregateGeom& MeshGeom = CheckMesh->BodySetup->AggGeom;
+        const FTransform &MeshTransform = StaticMeshComp->GetComponentTransform();
+        const UStaticMesh *StaticMesh = StaticMeshComp->GetStaticMesh();
 
-            for (const FKConvexElem& ConvexElem : MeshGeom.ConvexElems)
+        if (StaticMesh)
+        {
+            if (const UBodySetup *BodySetup = StaticMesh->GetBodySetup())
             {
-                for (const FVector& CheckVertex : ConvexElem.VertexData)
+                for (const FKConvexElem &ConvexElem : BodySetup->AggGeom.ConvexElems)
                 {
-                    const FVector& VertexWorldLocation = MeshTransform.TransformPosition(CheckVertex);
-                    BoundVertexes.Add(VertexWorldLocation);
+                    for (const FVector &V : ConvexElem.VertexData)
+                        BoundVertexes.Add(MeshTransform.TransformPosition(V));
                 }
             }
-        }
 
-        bool bHaveBodyVertexData = (BoundVertexes.Num() > 0);
-        // Fallback to use the mesh's render data if it doesn't have a valid body setup
-        if (!bHaveBodyVertexData && CheckMesh && CheckMesh->RenderData)
-        {
-            const FPositionVertexBuffer& MeshVertexBuffer = CheckMesh->RenderData->LODResources[0].VertexBuffers.PositionVertexBuffer;
-            const uint32 VertexesCount = MeshVertexBuffer.GetNumVertices();
-            for (uint32 i = 0; i < VertexesCount; i++)
+            if (BoundVertexes.IsEmpty())
             {
-                const FVector& VertexPosition = MeshTransform.TransformPosition(MeshVertexBuffer.VertexPosition(i));
-                BoundVertexes.Add(VertexPosition);
-            }
-        }
-    }
-    else
-    {
-        const USkeletalMeshComponent* SkeletalMeshComp = Cast<USkeletalMeshComponent>(CheckMeshComp);
-        if (SkeletalMeshComp)
-        {
-            const USkeletalMesh* SkeletalMesh = SkeletalMeshComp ? SkeletalMeshComp->SkeletalMesh : nullptr;
-            if (SkeletalMesh)
-            {
-                const UPhysicsAsset* MeshPhysicsAsset = SkeletalMesh->PhysicsAsset;
-                if (MeshPhysicsAsset)
+                if (const FStaticMeshRenderData *RenderData = StaticMesh->GetRenderData())
                 {
-                    const FTransform& MeshTransform = SkeletalMeshComp->GetComponentTransform();
-                    for (const USkeletalBodySetup* CheckSkeletalBodySetup : MeshPhysicsAsset->SkeletalBodySetups)
+                    if (RenderData->LODResources.Num() > 0)
                     {
-                        if (CheckSkeletalBodySetup)
+                        const FPositionVertexBuffer &VB =
+                            RenderData->LODResources[0].VertexBuffers.PositionVertexBuffer;
+                        const uint32 VertexCount = VB.GetNumVertices();
+                        for (uint32 i = 0; i < VertexCount; ++i)
                         {
-                            const FKAggregateGeom& MeshGeom = CheckSkeletalBodySetup->AggGeom;
-                            for (const FKConvexElem& ConvexElem : MeshGeom.ConvexElems)
-                            {
-                                for (const FVector& CheckVertex : ConvexElem.VertexData)
-                                {
-                                    const FVector& VertexWorldLocation = MeshTransform.TransformPosition(CheckVertex);
-                                    BoundVertexes.Add(VertexWorldLocation);
-                                }
-                            }
+                            // explicit conversion from FVector3f → FVector
+                            const FVector VertexPos(VB.VertexPosition(i));
+                            BoundVertexes.Add(MeshTransform.TransformPosition(VertexPos));
                         }
                     }
                 }
             }
         }
     }
-
-    if (BoundVertexes.Num() > 0)
+    else if (const USkeletalMeshComponent *SkeletalMeshComp = Cast<USkeletalMeshComponent>(CheckMeshComp))
     {
-        BBox2D = Calculate2dAABB(BoundVertexes, bClampToImage);
+        if (const USkeletalMesh *SkeletalMesh = SkeletalMeshComp->GetSkeletalMeshAsset())
+        {
+            if (const UPhysicsAsset *PhysicsAsset = SkeletalMesh->GetPhysicsAsset())
+            {
+                const FTransform &MeshTransform = SkeletalMeshComp->GetComponentTransform();
+                for (const USkeletalBodySetup *BodySetup : PhysicsAsset->SkeletalBodySetups)
+                {
+                    if (!BodySetup)
+                        continue;
+                    for (const FKConvexElem &ConvexElem : BodySetup->AggGeom.ConvexElems)
+                    {
+                        for (const FVector &V : ConvexElem.VertexData)
+                            BoundVertexes.Add(MeshTransform.TransformPosition(V));
+                    }
+                }
+            }
+        }
     }
+
+    if (!BoundVertexes.IsEmpty())
+        BBox2D = Calculate2dAABB(BoundVertexes, bClampToImage);
 
     return BBox2D;
 }

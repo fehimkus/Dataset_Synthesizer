@@ -12,6 +12,11 @@
 #include "NVSceneCapturerViewpointComponent.h"
 #include "NVImageExporter.h"
 #include "NVSceneDataHandler.h"
+#if WITH_EDITOR
+#include "Editor.h"
+#include "UnrealEdGlobals.h"
+#include "Editor/UnrealEdEngine.h"
+#endif // WITH_EDITOR
 #include "NVSceneCapturerActor.generated.h"
 
 USTRUCT(BlueprintType)

@@ -6,17 +6,32 @@
 
 using UnrealBuildTool;
 using System.IO;
- 
+
 public class NVSceneCapturer : ModuleRules
 {
-	public NVSceneCapturer(ReadOnlyTargetRules Target) : base(Target)
-	{
-		PrivateIncludePaths.AddRange(new string[] { "NVSceneCapturer/Private" });
- 
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "Json", "JsonUtilities", "InputCore", "RHI", "RenderCore"});
+    public NVSceneCapturer(ReadOnlyTargetRules Target) : base(Target)
+    {
+        PublicIncludePaths.AddRange(new string[]
+        {
+                // ✅ Force Unreal 5.5 Engine headers
+                System.IO.Path.Combine(EngineDirectory, "Source/Runtime/Core/Public"),
+                System.IO.Path.Combine(EngineDirectory, "Source/Runtime/Core/Public/Modules"),
+                System.IO.Path.Combine(EngineDirectory, "Source/Runtime/Core/Public/Misc"),
+                System.IO.Path.Combine(EngineDirectory, "Source/Editor/MainFrame/Public/Interfaces"),
+                System.IO.Path.Combine(EngineDirectory, "Source/Runtime/Core/Public/Templates"),
+                System.IO.Path.Combine(EngineDirectory, "Source/Runtime/CoreUObject/Public"),
+                System.IO.Path.Combine(EngineDirectory, "Source/Runtime/Engine/Public"),
+                System.IO.Path.Combine(EngineDirectory, "Source/Runtime/AssetRegistry/Public/AssetRegistry"),
+                System.IO.Path.Combine(EngineDirectory, "Source/Editor/MainFrame/Public"),
+                System.IO.Path.Combine(EngineDirectory, "Source/Editor/EditorStyle/Public")
+        });
+
+
+        PrivateIncludePaths.AddRange(new string[] { "NVSceneCapturer/Private" });
+        PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "Json", "JsonUtilities", "InputCore", "RHI", "RenderCore" });
         PublicDependencyModuleNames.AddRange(new string[] { "MovieSceneCapture", "ImageWrapper" });
 
-        PrivateDependencyModuleNames.AddRange(new string[] { "zlib", "UElibPNG" } );
+        PrivateDependencyModuleNames.AddRange(new string[] { "zlib", "UElibPNG" });
 
         if (Target.Type == TargetRules.TargetType.Editor)
         {
@@ -25,6 +40,7 @@ public class NVSceneCapturer : ModuleRules
 
         PrivatePCHHeaderFile = "Public/NVSceneCapturerModule.h";
 
-        bFasterWithoutUnity = true;
+        // bFasterWithoutUnity = true;
     }
 }
+

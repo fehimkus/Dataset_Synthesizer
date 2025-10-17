@@ -7,6 +7,11 @@
 #pragma once
 
 #include "GameFramework/Actor.h"
+#if WITH_EDITOR
+#include "Editor.h"
+#include "UnrealEdGlobals.h"
+#include "Editor/UnrealEdEngine.h"
+#endif // WITH_EDITOR
 #include "NVObjectMaskManager.generated.h"
 
 /// This enum describe how to get the mask name out of an actor

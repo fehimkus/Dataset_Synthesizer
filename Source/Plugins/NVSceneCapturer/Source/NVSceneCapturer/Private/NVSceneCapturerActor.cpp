@@ -132,7 +132,7 @@ void ANVSceneCapturerActor::BeginPlay()
 
     UWorld* World = GetWorld();
 #if WITH_EDITOR
-    bool bIsSimulating = GUnrealEd ? (GUnrealEd->bIsSimulatingInEditor || GUnrealEd->bIsSimulateInEditorQueued) : false;
+    bool bIsSimulating = GUnrealEd ? GUnrealEd->bIsSimulatingInEditor : false;
     if (!World || !World->IsGameWorld() || bIsSimulating)
     {
         return;
@@ -196,13 +196,13 @@ void ANVSceneCapturerActor::PostInitializeComponents()
 }
 
 #if WITH_EDITORONLY_DATA
-void ANVSceneCapturerActor::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent)
+void ANVSceneCapturerActor::PostEditChangeProperty(FPropertyChangedEvent &PropertyChangedEvent)
 {
-    const UProperty* PropertyThatChanged = PropertyChangedEvent.MemberProperty;
+    const FProperty *PropertyThatChanged = PropertyChangedEvent.MemberProperty;
     if (PropertyThatChanged)
     {
         const FName ChangedPropName = PropertyThatChanged->GetFName();
-        if ((ChangedPropName == GET_MEMBER_NAME_CHECKED(ANVSceneCapturerActor, CapturerSettings)))
+        if (ChangedPropName == GET_MEMBER_NAME_CHECKED(ANVSceneCapturerActor, CapturerSettings))
         {
             CapturerSettings.PostEditChangeProperty(PropertyChangedEvent);
         }
@@ -213,19 +213,23 @@ void ANVSceneCapturerActor::PostEditChangeProperty(struct FPropertyChangedEvent&
 
 void ANVSceneCapturerActor::OnActorSelected(UObject* Object)
 {
-    if (Object == this)
-    {
-        TArray<UActorComponent*> ChildComponents = GetComponentsByClass(UNVSceneCapturerViewpointComponent::StaticClass());
-        for (int i = 0; i < ChildComponents.Num(); i++)
+    #if WITH_EDITOR
+        if (Object == this && GEditor)
         {
-            UNVSceneCapturerViewpointComponent* CheckViewpointComp = Cast<UNVSceneCapturerViewpointComponent>(ChildComponents[i]);
-            if (CheckViewpointComp && CheckViewpointComp->IsEnabled())
+            TArray<UActorComponent *> ChildComponents = K2_GetComponentsByClass(UNVSceneCapturerViewpointComponent::StaticClass());
+            for (UActorComponent *Comp : ChildComponents)
             {
-                GSelectedComponentAnnotation.Set(CheckViewpointComp);
-                break;
+                if (UNVSceneCapturerViewpointComponent *ViewComp = Cast<UNVSceneCapturerViewpointComponent>(Comp))
+                {
+                    if (ViewComp->IsEnabled())
+                    {
+                        GEditor->SelectComponent(ViewComp, true, true, true);
+                        break;
+                    }
+                }
             }
         }
-    }
+    #endif
 }
 
 #endif //WITH_EDITORONLY_DATA
@@ -233,7 +237,7 @@ void ANVSceneCapturerActor::OnActorSelected(UObject* Object)
 void ANVSceneCapturerActor::CheckCaptureScene()
 {
 #if WITH_EDITOR
-    bool bIsSimulating = GUnrealEd ? (GUnrealEd->bIsSimulatingInEditor || GUnrealEd->bIsSimulateInEditorQueued) : false;
+    bool bIsSimulating = GUnrealEd ? GUnrealEd->bIsSimulatingInEditor : false;
     if (bIsSimulating)
     {
         return;
@@ -658,7 +662,7 @@ void ANVSceneCapturerActor::UpdateViewpointList()
             (CurrentState != ENVSceneCapturerState::Paused))
     {
         // Keep track of all the child viewpoint components
-        TArray<UActorComponent*> ChildComponents = this->GetComponentsByClass(UNVSceneCapturerViewpointComponent::StaticClass());
+        TArray<UActorComponent*> ChildComponents = this->K2_GetComponentsByClass(UNVSceneCapturerViewpointComponent::StaticClass());
         ViewpointList.Reset(ChildComponents.Num());
         for (int i = 0; i < ChildComponents.Num(); i++)
         {

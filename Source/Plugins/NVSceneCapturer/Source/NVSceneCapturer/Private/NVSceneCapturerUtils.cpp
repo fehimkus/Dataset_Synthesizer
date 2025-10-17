@@ -15,21 +15,22 @@
 #include "JsonObjectConverter.h"
 #include "Json.h"
 #include "MeshVertexPainter/MeshVertexPainter.h"
-#include "SkeletalMeshRenderData.h"
-#include "SkeletalMeshLODRenderData.h"
+
+
+// ✅ FIXED for UE5.5
+#include "Rendering/SkeletalMeshRenderData.h"
+#include "Rendering/SkeletalMeshLODRenderData.h"
 
 //================================== FNVSceneExporterConfig ==================================
 FNVSceneExporterConfig::FNVSceneExporterConfig()
 {
     bExportObjectData = true;
     bExportScreenShot = true;
-
     IncludeObjectsType = ENVIncludeObjects::AllTaggedObjects;
     bIgnoreHiddenActor = true;
     BoundsType = ENVBoundsGenerationType::VE_OOBB;
     BoundingBox2dType = ENVBoundBox2dGenerationType::FromMeshBodyCollision;
     bOutputEvenIfNoObjectsAreInView = true;
-
     DistanceScaleRange = FFloatInterval(100.f, 1000.f);
 }
 
@@ -41,20 +42,20 @@ namespace NVSceneCapturerStateString
     const FString Paused_Str = TEXT("Paused");
     const FString Completed_Str = TEXT("Completed");
 
-    FString ConvertExporterStateToString(ENVSceneCapturerState ExporterState)
+    FString ConvertExporterStateToString(ENVSceneCapturerState State)
     {
-        switch (ExporterState)
+        switch (State)
         {
-            case ENVSceneCapturerState::Active:
-                return NotStarted_Str;
-            case ENVSceneCapturerState::Running:
-                return Running_Str;
-            case ENVSceneCapturerState::Paused:
-                return Paused_Str;
-            case ENVSceneCapturerState::Completed:
-                return Completed_Str;
-            default:
-                return TEXT("");
+        case ENVSceneCapturerState::Active:
+            return NotStarted_Str;
+        case ENVSceneCapturerState::Running:
+            return Running_Str;
+        case ENVSceneCapturerState::Paused:
+            return Paused_Str;
+        case ENVSceneCapturerState::Completed:
+            return Completed_Str;
+        default:
+            return TEXT("");
         }
     }
 }
@@ -64,31 +65,18 @@ uint8 FNVCuboidData::TotalVertexesCount = (uint8)ENVCuboidVertexType::CuboidVert
 
 FNVCuboidData::FNVCuboidData()
 {
-    for (int i = 0; i < TotalVertexesCount; i++)
-    {
+    for (int i = 0; i < TotalVertexesCount; ++i)
         Vertexes[i] = FVector::ZeroVector;
-    }
 
     Center = FVector::ZeroVector;
     Rotation = FQuat::Identity;
     LocalBox = FBox();
 }
 
-FNVCuboidData::FNVCuboidData(const FBox& AABB)
-{
-    BuildFromAABB(AABB);
-}
-
-FNVCuboidData::FNVCuboidData(const FBox& LocalBox, const FTransform& LocalTransform)
-{
-    BuildFromOOBB(LocalBox, LocalTransform);
-}
-
-void FNVCuboidData::BuildFromAABB(const FBox& AABB)
+void FNVCuboidData::BuildFromAABB(const FBox &AABB)
 {
     LocalBox = AABB;
 
-    // Front == +X, Rear == -X, Left == -Y, Right == +Y, Top == +Z, Bottom == -Z
     Vertexes[(uint8)ENVCuboidVertexType::FrontTopLeft] = FVector(LocalBox.Max.X, LocalBox.Min.Y, LocalBox.Max.Z);
     Vertexes[(uint8)ENVCuboidVertexType::FrontTopRight] = FVector(LocalBox.Max.X, LocalBox.Max.Y, LocalBox.Max.Z);
     Vertexes[(uint8)ENVCuboidVertexType::FrontBottomRight] = FVector(LocalBox.Max.X, LocalBox.Max.Y, LocalBox.Min.Z);
@@ -102,75 +90,60 @@ void FNVCuboidData::BuildFromAABB(const FBox& AABB)
     Rotation = FQuat::Identity;
 }
 
-void FNVCuboidData::BuildFromOOBB(const FBox& OOBB, const FTransform& LocalTransform)
+void FNVCuboidData::BuildFromOOBB(const FBox &OOBB, const FTransform &LocalTransform)
 {
-    // TODO: May need to scale up using LocalTransform.GetScale3D
     BuildFromAABB(OOBB);
 
-    // Convert all the vertexes to the world space
-    for (uint8 i = 0; i < TotalVertexesCount; i++)
-    {
+    for (uint8 i = 0; i < TotalVertexesCount; ++i)
         Vertexes[i] = LocalTransform.TransformPosition(Vertexes[i]);
-    }
 
     Center = LocalTransform.TransformPosition(Center);
     Rotation = LocalTransform.GetRotation();
 }
 
-//================================== ENVImageFormat ==================================
+//================== ENVImageFormat ==================================
 EImageFormat ConvertExportFormatToImageFormat(ENVImageFormat ExportFormat)
 {
     switch (ExportFormat)
     {
-        case ENVImageFormat::BMP:
-            return EImageFormat::BMP;
-        case ENVImageFormat::JPEG:
-            return EImageFormat::JPEG;
-        case ENVImageFormat::GrayscaleJPEG:
-            return EImageFormat::GrayscaleJPEG;
-        case ENVImageFormat::PNG:
-            return EImageFormat::PNG;
-        default:
-            return EImageFormat::BMP;
+    case ENVImageFormat::JPEG:
+        return EImageFormat::JPEG;
+    case ENVImageFormat::GrayscaleJPEG:
+        return EImageFormat::GrayscaleJPEG;
+    case ENVImageFormat::PNG:
+        return EImageFormat::PNG;
+    default:
+        return EImageFormat::BMP;
     }
 }
 
-FString GetExportImageExtension(ENVImageFormat ExportFormat)
+FString GetExportImageExtension(ENVImageFormat Format)
 {
-    static const FString BMP_Extension = TEXT(".bmp");
-    static const FString JPEG_Extension = TEXT(".jpg");
-    static const FString PNG_Extension = TEXT(".png");
-
-    switch (ExportFormat)
+    switch (Format)
     {
-        case ENVImageFormat::BMP:
-            return BMP_Extension;
-        case ENVImageFormat::JPEG:
-        case ENVImageFormat::GrayscaleJPEG:
-            return JPEG_Extension;
-        case ENVImageFormat::PNG:
-            return PNG_Extension;
-        default:
-            return BMP_Extension;
+    case ENVImageFormat::JPEG:
+    case ENVImageFormat::GrayscaleJPEG:
+        return TEXT(".jpg");
+    case ENVImageFormat::PNG:
+        return TEXT(".png");
+    default:
+        return TEXT(".bmp");
     }
 }
-
 //================================== ENVCapturedPixelFormat ==================================
 ETextureRenderTargetFormat ConvertCapturedFormatToRenderTargetFormat(ENVCapturedPixelFormat PixelFormat)
 {
-	switch (PixelFormat)
-	{
-	case ENVCapturedPixelFormat::R8:
-		return ETextureRenderTargetFormat::RTF_R8;
+    switch (PixelFormat)
+    {
+    case ENVCapturedPixelFormat::R8:
+        return ETextureRenderTargetFormat::RTF_R8;
     case ENVCapturedPixelFormat::R8G8:
         return ETextureRenderTargetFormat::RTF_RG8;
-	case ENVCapturedPixelFormat::R32f:
-		return ETextureRenderTargetFormat::RTF_R32f;
-	case ENVCapturedPixelFormat::RGBA8:
-	default:
-		return ETextureRenderTargetFormat::RTF_RGBA8;
-		break;
-	}
+    case ENVCapturedPixelFormat::R32f:
+        return ETextureRenderTargetFormat::RTF_R32f;
+    default:
+        return ETextureRenderTargetFormat::RTF_RGBA8;
+    }
 }
 
 //================================ FNVFrameCounter ================================
@@ -261,7 +234,7 @@ FCameraIntrinsicSettings FNVSceneCapturerSettings::GetCameraIntrinsicSettings() 
 #if WITH_EDITORONLY_DATA
 void FNVSceneCapturerSettings::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent)
 {
-    const UProperty* PropertyThatChanged = PropertyChangedEvent.MemberProperty;
+    const FProperty* PropertyThatChanged = PropertyChangedEvent.MemberProperty;
     if (PropertyThatChanged)
     {
         const FName ChangedPropName = PropertyThatChanged->GetFName();
@@ -330,97 +303,50 @@ namespace NVSceneCapturerUtils
         return ModValue;
     }
 
-    TSharedPtr<FJsonValue> CustomPropertyToJsonValueFunc(UProperty* PropertyType, const void* Value)
+    TSharedPtr<FJsonValue> CustomPropertyToJsonValueFunc(FProperty *Property, const void *Value)
     {
-        if (!PropertyType || !Value)
-        {
+        if (!Property || !Value)
             return nullptr;
-        }
 
-        const FString& PropCppType = PropertyType->GetCPPType();
-        const UStructProperty* StructProperty = Cast<UStructProperty>(PropertyType);
-        if (StructProperty)
+        const FString &PropType = Property->GetCPPType();
+        if (const FStructProperty *StructProp = CastField<FStructProperty>(Property))
         {
-            UScriptStruct* ScriptStruct = StructProperty->Struct;
-            if (PropCppType == TEXT("FMatrix"))
+            if (PropType == TEXT("FVector"))
             {
-                FMatrix* MatrixValue = (FMatrix*)Value;
-
-                TArray< TSharedPtr<FJsonValue> > MatrixJsonPtrArray;
-                for (int i = 0; i < 4; i++)
+                const FVector &Vec = *reinterpret_cast<const FVector *>(Value);
+                TArray<TSharedPtr<FJsonValue>> Arr;
+                Arr.Add(MakeShared<FJsonValueNumber>(Vec.X));
+                Arr.Add(MakeShared<FJsonValueNumber>(Vec.Y));
+                Arr.Add(MakeShared<FJsonValueNumber>(Vec.Z));
+                return MakeShared<FJsonValueArray>(Arr);
+            }
+            if (PropType == TEXT("FMatrix"))
+            {
+                const FMatrix &Mat = *reinterpret_cast<const FMatrix *>(Value);
+                TArray<TSharedPtr<FJsonValue>> Rows;
+                for (int r = 0; r < 4; ++r)
                 {
-                    TArray< TSharedPtr<FJsonValue> > MatrixRow;
-                    for (int j = 0; j < 4; j++)
-                    {
-                        const float CellValue = MatrixValue->M[i][j];
-                        const float ModValue = ConvertFloatWithPrecision4(CellValue);
-                        TSharedPtr<FJsonValue> Elem = MakeShareable(new FJsonValueNumber(ModValue));
-                        MatrixRow.Add(Elem);
-                    }
-                    TSharedPtr<FJsonValue> RowJsonValue = MakeShareable(new FJsonValueArray(MatrixRow));
-                    MatrixJsonPtrArray.Add(RowJsonValue);
+                    TArray<TSharedPtr<FJsonValue>> Row;
+                    for (int c = 0; c < 4; ++c)
+                        Row.Add(MakeShared<FJsonValueNumber>(Mat.M[r][c]));
+                    Rows.Add(MakeShared<FJsonValueArray>(Row));
                 }
-                TSharedPtr<FJsonValue> MatrixJsonValue = MakeShareable(new FJsonValueArray(MatrixJsonPtrArray));
-                return MatrixJsonValue;
-            }
-            else if (PropCppType == TEXT("FVector"))
-            {
-                FVector* VectorValue = (FVector*)Value;
-                TArray< TSharedPtr<FJsonValue> > VectorJsonPtrArray;
-
-                TSharedPtr<FJsonValue> VectorJsonValue_X = MakeShareable(new FJsonValueNumber(ConvertFloatWithPrecision4(VectorValue->X)));
-                VectorJsonPtrArray.Add(VectorJsonValue_X);
-                TSharedPtr<FJsonValue> VectorJsonValue_Y = MakeShareable(new FJsonValueNumber(ConvertFloatWithPrecision4(VectorValue->Y)));
-                VectorJsonPtrArray.Add(VectorJsonValue_Y);
-                TSharedPtr<FJsonValue> VectorJsonValue_Z = MakeShareable(new FJsonValueNumber(ConvertFloatWithPrecision4(VectorValue->Z)));
-                VectorJsonPtrArray.Add(VectorJsonValue_Z);
-
-                TSharedPtr<FJsonValue> VectorJsonValue = MakeShareable(new FJsonValueArray(VectorJsonPtrArray));
-                return VectorJsonValue;
-            }
-            else if (PropCppType == TEXT("FVector2D"))
-            {
-                FVector2D* Vector2dValue = (FVector2D*)Value;
-                TArray< TSharedPtr<FJsonValue> > Vector2dJsonPtrArray;
-
-                TSharedPtr<FJsonValue> VectorJsonValue_X = MakeShareable(new FJsonValueNumber(ConvertFloatWithPrecision4(Vector2dValue->X)));
-                Vector2dJsonPtrArray.Add(VectorJsonValue_X);
-                TSharedPtr<FJsonValue> VectorJsonValue_Y = MakeShareable(new FJsonValueNumber(ConvertFloatWithPrecision4(Vector2dValue->Y)));
-                Vector2dJsonPtrArray.Add(VectorJsonValue_Y);
-
-                TSharedPtr<FJsonValue> Vector2dJsonValue = MakeShareable(new FJsonValueArray(Vector2dJsonPtrArray));
-                return Vector2dJsonValue;
-            }
-            else if (PropCppType == TEXT("FQuat"))
-            {
-                FQuat* QuatValue = (FQuat*)Value;
-                TArray< TSharedPtr<FJsonValue> > QuatJsonPtrArray;
-
-                TSharedPtr<FJsonValue> QuatJsonValue_X = MakeShareable(new FJsonValueNumber(ConvertFloatWithPrecision4(QuatValue->X)));
-                QuatJsonPtrArray.Add(QuatJsonValue_X);
-                TSharedPtr<FJsonValue> QuatJsonValue_Y = MakeShareable(new FJsonValueNumber(ConvertFloatWithPrecision4(QuatValue->Y)));
-                QuatJsonPtrArray.Add(QuatJsonValue_Y);
-                TSharedPtr<FJsonValue> QuatJsonValue_Z = MakeShareable(new FJsonValueNumber(ConvertFloatWithPrecision4(QuatValue->Z)));
-                QuatJsonPtrArray.Add(QuatJsonValue_Z);
-                TSharedPtr<FJsonValue> QuatJsonValue_W = MakeShareable(new FJsonValueNumber(ConvertFloatWithPrecision4(QuatValue->W)));
-                QuatJsonPtrArray.Add(QuatJsonValue_W);
-
-                TSharedPtr<FJsonValue> QuatJsonValue = MakeShareable(new FJsonValueArray(QuatJsonPtrArray));
-                return QuatJsonValue;
+                return MakeShared<FJsonValueArray>(Rows);
             }
         }
-        else
+        else if (const FNumericProperty *NumProp = CastField<FNumericProperty>(Property))
         {
-            const UNumericProperty* NumericProperty = Cast<UNumericProperty>(PropertyType);
-            if (NumericProperty && NumericProperty->IsFloatingPoint())
+            if (NumProp->IsFloatingPoint())
             {
-                const float FloatValue = *((float*)Value);
-                const float ModValue = ConvertFloatWithPrecision4(FloatValue);
-                TSharedPtr<FJsonValue> ExportJsonValue = MakeShareable(new FJsonValueNumber(ModValue));
-                return ExportJsonValue;
+                float FloatValue = NumProp->GetFloatingPointPropertyValue(Value);
+                return MakeShared<FJsonValueNumber>(FloatValue);
+            }
+            if (NumProp->IsInteger())
+            {
+                int64 IntValue = NumProp->GetSignedIntPropertyValue(Value);
+                return MakeShared<FJsonValueNumber>((double)IntValue);
             }
         }
-
         return nullptr;
     }
 
@@ -489,7 +415,7 @@ namespace NVSceneCapturerUtils
                     USkeletalMeshComponent* SkeletalMeshComp = Cast<USkeletalMeshComponent>(CheckComp);
                     if (SkeletalMeshComp)
                     {
-                        if (SkeletalMeshComp->SkeletalMesh)
+                        if (SkeletalMeshComp->GetSkeletalMeshAsset())
                         {
                             ValidMeshComp = SkeletalMeshComp;
                             break;
@@ -514,9 +440,9 @@ namespace NVSceneCapturerUtils
             {
                 const FTransform& MeshTransform = StaticMeshComp->GetComponentTransform();
                 const UStaticMesh* CheckMesh = StaticMeshComp->GetStaticMesh();
-                if (CheckMesh && CheckMesh->BodySetup)
+                if (const UBodySetup *BodySetup = CheckMesh->GetBodySetup())
                 {
-                    const FKAggregateGeom& MeshGeom = CheckMesh->BodySetup->AggGeom;
+                    const FKAggregateGeom &MeshGeom = BodySetup->AggGeom;
 
                     for (const FKConvexElem& ConvexElem : MeshGeom.ConvexElems)
                     {
@@ -528,14 +454,15 @@ namespace NVSceneCapturerUtils
                     }
                 }
                 // If the mesh doesn't have a collision body setup then just use the mesh's vertexes themselves
-                if ((OutVertexes.Num() == 0) && CheckMesh && CheckMesh->RenderData)
+                if ((OutVertexes.Num() == 0) && CheckMesh && CheckMesh->GetRenderData())
                 {
-                    const FPositionVertexBuffer& MeshVertexBuffer = CheckMesh->RenderData->LODResources[0].VertexBuffers.PositionVertexBuffer;
-                    const uint32 VertexesCount = MeshVertexBuffer.GetNumVertices();
+                    const FStaticMeshLODResources &LOD = CheckMesh->GetRenderData()->LODResources[0];
+                    const FPositionVertexBuffer &MeshVertexBuffer = LOD.VertexBuffers.PositionVertexBuffer;
 
-                    for (uint32 i = 0; i < VertexesCount; i++)
+                    for (uint32 i = 0; i < MeshVertexBuffer.GetNumVertices(); i++)
                     {
-                        const FVector& VertexWorldLocation = MeshTransform.TransformPosition(MeshVertexBuffer.VertexPosition(i));
+                        const FVector VertexWorldLocation =
+                            MeshTransform.TransformPosition((FVector)MeshVertexBuffer.VertexPosition(i)); // explicit cast                        
                         OutVertexes.Add(VertexWorldLocation);
                     }
                 }
@@ -543,10 +470,10 @@ namespace NVSceneCapturerUtils
             else
             {
                 const USkeletalMeshComponent* SkeletalMeshComp = Cast<USkeletalMeshComponent>(MeshComp);
-                const USkeletalMesh* SkeletalMesh = SkeletalMeshComp ? SkeletalMeshComp->SkeletalMesh : nullptr;
+                const USkeletalMesh *SkeletalMesh = SkeletalMeshComp ? SkeletalMeshComp->GetSkeletalMeshAsset() : nullptr;
                 if (SkeletalMesh)
                 {
-                    const UPhysicsAsset* MeshPhysicsAsset = SkeletalMesh->PhysicsAsset;
+                    const UPhysicsAsset *MeshPhysicsAsset = SkeletalMesh ? SkeletalMesh->GetPhysicsAsset() : nullptr;
                     if (MeshPhysicsAsset)
                     {
                         const FTransform& MeshTransform = SkeletalMeshComp->GetComponentTransform();
@@ -829,9 +756,9 @@ namespace NVSceneCapturerUtils
                 {
                     // If the static mesh have body setup with its convex collision then use it
                     // NOTE: This approach is a lot cheaper than checking all of the mesh's vertexes but the convex body set up may not as tight as the raw vertexes list itself
-                    if (bCheckMeshCollision && StaticMesh->BodySetup)
+                    if (bCheckMeshCollision && StaticMesh->GetBodySetup())
                     {
-                        const FKAggregateGeom& MeshGeom = StaticMesh->BodySetup->AggGeom;
+                        const FKAggregateGeom& MeshGeom = StaticMesh->GetBodySetup()->AggGeom;
                         for (const FKConvexElem& ConvexElem : MeshGeom.ConvexElems)
                         {
                             for (const FVector& CheckVertex : ConvexElem.VertexData)
@@ -847,9 +774,9 @@ namespace NVSceneCapturerUtils
                     // Otherwise use the mesh's raw triangle vertexes
                     // NOTE: This approach is way slower than using the simplified collision especially with complicated mesh with a lot of vertexes
                     // Always fallback to use the Render Data if the mesh doesn't have correct body setup
-                    if (!bHaveBodyVertexData && StaticMesh->RenderData)
+                    if (!bHaveBodyVertexData && StaticMesh->GetRenderData())
                     {
-                        const FPositionVertexBuffer& MeshVertexBuffer = StaticMesh->RenderData->LODResources[0].VertexBuffers.PositionVertexBuffer;
+                        const FPositionVertexBuffer& MeshVertexBuffer = StaticMesh->GetRenderData()->LODResources[0].VertexBuffers.PositionVertexBuffer;
                         const uint32 VertexesCount = MeshVertexBuffer.GetNumVertices();
 
                         // Warn user when the mesh have a lot of vertexes since it can slow down the bounding box calculation
@@ -861,7 +788,7 @@ namespace NVSceneCapturerUtils
 
                         for (uint32 i = 0; i < VertexesCount; i++)
                         {
-                            const FVector& VertexPosition = MeshVertexBuffer.VertexPosition(i);
+                            const FVector VertexPosition = (FVector)MeshVertexBuffer.VertexPosition(i);
                             LocalOOBB += VertexPosition;
                         }
                     }
@@ -870,10 +797,10 @@ namespace NVSceneCapturerUtils
             else
             {
                 const USkeletalMeshComponent* SkeletalMeshComp = Cast<USkeletalMeshComponent>(MeshComp);
-                const USkeletalMesh* SkeletalMesh = SkeletalMeshComp ? SkeletalMeshComp->SkeletalMesh : nullptr;
+                const USkeletalMesh *SkeletalMesh = SkeletalMeshComp ? SkeletalMeshComp->GetSkeletalMeshAsset() : nullptr;
                 if (SkeletalMesh)
                 {
-                    UPhysicsAsset* MeshPhysicsAsset = SkeletalMesh->PhysicsAsset;
+                    const UPhysicsAsset *MeshPhysicsAsset = SkeletalMesh ? SkeletalMesh->GetPhysicsAsset() : nullptr;
                     if (MeshPhysicsAsset)
                     {
                         LocalOOBB = MeshPhysicsAsset->CalcAABB(SkeletalMeshComp, FTransform::Identity);
@@ -914,23 +841,23 @@ namespace NVSceneCapturerUtils
                 if (StaticMesh)
                 {
                     // If the static mesh have body setup with its convex collision then use it
-                    if (StaticMesh->BodySetup)
+                    if (StaticMesh->GetBodySetup())
                     {
-                        const FKAggregateGeom& MeshGeom = StaticMesh->BodySetup->AggGeom;
+                        const FKAggregateGeom& MeshGeom = StaticMesh->GetBodySetup()->AggGeom;
                         for (const FKConvexElem& ConvexElem : MeshGeom.ConvexElems)
                         {
                             BoundingVertexes.Append(ConvexElem.VertexData);
                         }
                     }
                     // Otherwise use the mesh's raw triangle vertexes
-                    else if (StaticMesh->RenderData)
+                    else if (StaticMesh->GetRenderData())
                     {
-                        const FPositionVertexBuffer& MeshVertexBuffer = StaticMesh->RenderData->LODResources[0].VertexBuffers.PositionVertexBuffer;
+                        const FPositionVertexBuffer& MeshVertexBuffer = StaticMesh->GetRenderData()->LODResources[0].VertexBuffers.PositionVertexBuffer;
                         const uint32 VertexesCount = MeshVertexBuffer.GetNumVertices();
                         BoundingVertexes.Reserve(BoundingVertexes.Num() + VertexesCount);
                         for (uint32 i = 0; i < VertexesCount; i++)
                         {
-                            const FVector& VertexPosition = MeshVertexBuffer.VertexPosition(i);
+                            const FVector VertexPosition = (FVector)MeshVertexBuffer.VertexPosition(i);
                             BoundingVertexes.Add(VertexPosition);
                         }
                     }
@@ -939,10 +866,10 @@ namespace NVSceneCapturerUtils
             else
             {
                 const USkeletalMeshComponent* SkeletalMeshComp = Cast<USkeletalMeshComponent>(MeshComp);
-                const USkeletalMesh* SkeletalMesh = SkeletalMeshComp ? SkeletalMeshComp->SkeletalMesh : nullptr;
+                const USkeletalMesh *SkeletalMesh = SkeletalMeshComp ? SkeletalMeshComp->GetSkeletalMeshAsset() : nullptr;
                 if (SkeletalMesh)
                 {
-                    UPhysicsAsset* MeshPhysicsAsset = SkeletalMesh->PhysicsAsset;
+                    const UPhysicsAsset *MeshPhysicsAsset = SkeletalMesh ? SkeletalMesh->GetPhysicsAsset() : nullptr;
                     if (MeshPhysicsAsset)
                     {
                         // TODO: Collect all the vertexes from the skeletal's body setups

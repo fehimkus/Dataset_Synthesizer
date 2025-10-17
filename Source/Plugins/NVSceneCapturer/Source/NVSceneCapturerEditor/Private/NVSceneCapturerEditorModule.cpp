@@ -24,7 +24,7 @@ IMPLEMENT_MODULE(IModuleNVSceneCapturerEditor, NVSceneCapturerEditor)
 //General Log
 DEFINE_LOG_CATEGORY(LogNVSceneCapturerEditor);
 
-#define LOCTEXT_NAMESPACE "NVSceneCapturerEditor"
+#define LOCTEXT_NAMESPACE2 "NVSceneCapturerEditor"
 void IModuleNVSceneCapturerEditor::StartupModule()
 {
     bRegisteredComponentVisualizers = false;
@@ -118,7 +118,7 @@ void IModuleNVSceneCapturerEditor::RegisterPlacementModes()
         static const FName NativeParentClassTag(TEXT("NativeParentClass"));
         const FString CapturerActorClassName = FString::Printf(TEXT("%s'%s'"), *UClass::StaticClass()->GetName(), *ANVSceneCapturerActor::StaticClass()->GetPathName());
         TArray<FAssetData> AssetDatas;
-        AssetRegistryModule.Get().GetAssetsByClass(UBlueprint::StaticClass()->GetFName(), AssetDatas);
+        AssetRegistryModule.Get().GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), AssetDatas);
         for (FAssetData AssetData : AssetDatas)
         {
             const FString& AssetClassType = AssetData.GetTagValueRef<FString>(NativeParentClassTag);
@@ -179,13 +179,13 @@ void IModuleNVSceneCapturerEditor::CreateToolbarWidgets(FToolBarBuilder& Toolbar
 
         ToolbarBuilder.AddToolBarButton(
             FUIAction(
-                FExecuteAction::CreateLambda([=] { FGlobalTabmanager::Get()->InvokeTab(FTabId("WidgetReflector")); }),
-                FCanExecuteAction()
-            ),
+                FExecuteAction::CreateLambda([=]
+                                             { FGlobalTabmanager::Get()->TryInvokeTab(FTabId("WidgetReflector")); }),
+                FCanExecuteAction()),
             NAME_None,
             LOCTEXT("NVDLSettings_Label", "NVDL Settings"),
             LOCTEXT("NVDLSettings_Tooltip", "Nvidia Deep learning toolkit settings"),
-            FSlateIcon(FEditorStyle::GetStyleSetName(), "LevelEditor.GameSettings"),
+            FSlateIcon(FAppStyle::GetAppStyleSetName(), "LevelEditor.GameSettings"),
             EUserInterfaceActionType::ToggleButton);
     }
     ToolbarBuilder.EndSection();
@@ -198,4 +198,4 @@ void IModuleNVSceneCapturerEditor::RegisterContentMountPoint()
     FPackageName::RegisterMountPoint(MountContentPath, ModuleContentPath);
 }
 
-#undef LOCTEXT_NAMESPACE
+#undef LOCTEXT_NAMESPACE2
