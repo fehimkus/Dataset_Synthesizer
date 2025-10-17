@@ -112,7 +112,7 @@ void IModuleNVDataObjectEditor::ScanDataObjects()
 
             UPackage* NewDataPackage = nullptr;
             FString ExistingFilename;
-            const bool bPackageAlreadyExists = FPackageName::DoesPackageExist(NewDataPackagePath, NULL, &ExistingFilename);
+            const bool bPackageAlreadyExists = FPackageName::DoesPackageExist(NewDataPackagePath, &ExistingFilename);
             if (bPackageAlreadyExists)
             {
                 NewDataPackage = LoadPackage(nullptr, *ExistingFilename, LOAD_None);
@@ -121,9 +121,9 @@ void IModuleNVDataObjectEditor::ScanDataObjects()
             }
             else
             {
-                NewDataPackage = CreatePackage(nullptr, *NewDataPackagePath);
+                NewDataPackage = CreatePackage(*NewDataPackagePath);
                 NewDataPackage->SetPackageFlags(PKG_EditorOnly);
-                NewDataPackage->SetFolderName(TEXT("DataObject"));
+                // NewDataPackage->SetFolderName(TEXT("DataObject")); 
             }
             PackageToSave.Add(NewDataPackage);
 

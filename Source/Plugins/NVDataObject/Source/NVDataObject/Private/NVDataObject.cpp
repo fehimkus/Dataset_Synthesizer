@@ -16,11 +16,11 @@
 DEFINE_LOG_CATEGORY(LogNVDataObject);
 
 // Sets default values
-UNVDataObjectAsset::UNVDataObjectAsset(const FObjectInitializer& ObjectInitializer)
+UNVDataObjectAsset::UNVDataObjectAsset(const FObjectInitializer &ObjectInitializer)
 {
 }
 
-bool UNVDataObjectAsset::SerializeToJsonFile(const UNVDataObjectAsset* DataObjectContainer, const FString& OutputFilePath)
+bool UNVDataObjectAsset::SerializeToJsonFile(const UNVDataObjectAsset *DataObjectContainer, const FString &OutputFilePath)
 {
     bool bResult = false;
     if (DataObjectContainer && DataObjectContainer->DataObject)
@@ -31,11 +31,11 @@ bool UNVDataObjectAsset::SerializeToJsonFile(const UNVDataObjectAsset* DataObjec
     return bResult;
 }
 
-UNVDataObjectAsset* UNVDataObjectAsset::DeserializeFromJsonFile(const FString& SourceFilePath, UObject* InParent, FName InName, EObjectFlags Flags)
+UNVDataObjectAsset *UNVDataObjectAsset::DeserializeFromJsonFile(const FString &SourceFilePath, UObject *InParent, FName InName, EObjectFlags Flags)
 {
-    UNVDataObjectAsset* result = nullptr;
+    UNVDataObjectAsset *result = nullptr;
 
-    ensure(InParent!=nullptr);
+    ensure(InParent != nullptr);
     if (InParent == nullptr)
     {
         UE_LOG(LogNVDataObject, Error, TEXT("invalid argument."));
@@ -45,18 +45,18 @@ UNVDataObjectAsset* UNVDataObjectAsset::DeserializeFromJsonFile(const FString& S
         FString JsonString = TEXT("");
         if (FFileHelper::LoadFileToString(JsonString, *SourceFilePath))
         {
-            result= DeserializeFromJsonString(JsonString, InParent, InName, Flags);
+            result = DeserializeFromJsonString(JsonString, InParent, InName, Flags);
         }
     }
 
     return result;
 }
 
-UNVDataObjectAsset* UNVDataObjectAsset::DeserializeFromJsonString(const FString& SourceJsonString, UObject* InParent, FName InName, EObjectFlags Flags)
+UNVDataObjectAsset *UNVDataObjectAsset::DeserializeFromJsonString(const FString &SourceJsonString, UObject *InParent, FName InName, EObjectFlags Flags)
 {
-    UNVDataObjectAsset* result = nullptr;
+    UNVDataObjectAsset *result = nullptr;
 
-    ensure(InParent!=nullptr);
+    ensure(InParent != nullptr);
     if (InParent == nullptr)
     {
         UE_LOG(LogNVDataObject, Error, TEXT("invalid argument."));
@@ -68,19 +68,19 @@ UNVDataObjectAsset* UNVDataObjectAsset::DeserializeFromJsonString(const FString&
         result = NewObject<UNVDataObjectAsset>(InParent, UNVDataObjectAsset::StaticClass(), ContainerName, Flags, nullptr);
         if (result)
         {
-            UNVDataObject* ImportedDataObject = UNVDataObject::DeserializeFromJsonString(SourceJsonString, result, InName, Flags);
+            UNVDataObject *ImportedDataObject = UNVDataObject::DeserializeFromJsonString(SourceJsonString, result, InName, Flags);
             result->DataObject = ImportedDataObject;
         }
     }
     return result;
 }
 
-UObject* UNVDataObjectAsset::CreateObjectFromDefinitionData(UNVDataObjectAsset* DefinitionDataObj)
+UObject *UNVDataObjectAsset::CreateObjectFromDefinitionData(UNVDataObjectAsset *DefinitionDataObj)
 {
     return nullptr;
 }
 
-void UNVDataObjectAsset::Serialize(FArchive& Ar)
+void UNVDataObjectAsset::Serialize(FArchive &Ar)
 {
     if (Ar.IsLoading())
     {
@@ -93,11 +93,11 @@ void UNVDataObjectAsset::Serialize(FArchive& Ar)
         if (DataObject && AssetImportData)
         {
             // If the data object is transactional => it's just reimported
-            //if (DataObject->HasAnyFlags(RF_Transactional))
+            // if (DataObject->HasAnyFlags(RF_Transactional))
             //{
             //  DataObject->ClearFlags(RF_Transactional);
             //}
-            UPackage* Package = GetOutermost();
+            UPackage *Package = GetOutermost();
             if (!Package || !Package->IsDirty())
             {
                 bool bTest = true;
@@ -114,20 +114,21 @@ void UNVDataObjectAsset::Serialize(FArchive& Ar)
     Super::Serialize(Ar);
 }
 
-void UNVDataObjectAsset::PostSaveRoot(bool bCleanupIsRequired)
+void UNVDataObjectAsset::PostSaveRoot(FObjectPostSaveRootContext ObjectSaveContext)
 {
-    Super::PostSaveRoot(bCleanupIsRequired);
+    Super::PostSaveRoot(ObjectSaveContext);
 }
 
 #if WITH_EDITORONLY_DATA
-void UNVDataObjectAsset::GetAssetRegistryTags(TArray<FAssetRegistryTag>& OutTags) const
+void UNVDataObjectAsset::GetAssetRegistryTags(FAssetRegistryTagsContext Context) const
 {
     if (AssetImportData)
     {
-        OutTags.Add(FAssetRegistryTag(SourceFileTagName(), AssetImportData->GetSourceData().ToJson(), FAssetRegistryTag::TT_Hidden));
+        Context.AddTag(FAssetRegistryTag(SourceFileTagName(),
+                                         AssetImportData->GetSourceData().ToJson(),
+                                         FAssetRegistryTag::TT_Hidden));
     }
-
-    Super::GetAssetRegistryTags(OutTags);
+    Super::GetAssetRegistryTags(Context);
 }
 
 void UNVDataObjectAsset::PostInitProperties()
@@ -142,17 +143,17 @@ void UNVDataObjectAsset::PostInitProperties()
 #endif // WITH_EDITORONLY_DATA
 
 //========================================= UNVDataObjectOwner =========================================
-UNVDataObjectOwner::UNVDataObjectOwner(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
+UNVDataObjectOwner::UNVDataObjectOwner(const FObjectInitializer &ObjectInitializer) : Super(ObjectInitializer)
 {
 }
 
 //========================================= UNVDataObject =========================================
-UNVDataObject::UNVDataObject(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
+UNVDataObject::UNVDataObject(const FObjectInitializer &ObjectInitializer) : Super(ObjectInitializer)
 {
     LogicHandlerClassType = nullptr;
 }
 
-bool UNVDataObject::SerializeToJsonFile(const UNVDataObject* DataObject, const FString& OutputFilePath)
+bool UNVDataObject::SerializeToJsonFile(const UNVDataObject *DataObject, const FString &OutputFilePath)
 {
     bool bResult = false;
     if (DataObject)
@@ -165,11 +166,11 @@ bool UNVDataObject::SerializeToJsonFile(const UNVDataObject* DataObject, const F
         if (FJsonObjectConverter::UStructToJsonObject(DataObject->GetClass(), DataObject, JSonObject, CheckFlags, SkipFlags, 0))
         {
             static const FString ClassNameFieldString = TEXT("_class");
-            const FString ClassName = UObjectProperty::GetExportPath(DataObject->GetClass(), nullptr, nullptr, 0);
+            const FString ClassName = FObjectPropertyBase::GetExportPath(DataObject->GetClass(), nullptr, nullptr, 0);
             JSonObject->SetStringField(ClassNameFieldString, ClassName);
 
             FString JsonObjStr = TEXT("");
-            TSharedRef<TJsonWriter<TCHAR, TPrettyJsonPrintPolicy<TCHAR> > > JsonWriter = TJsonWriterFactory<TCHAR, TPrettyJsonPrintPolicy<TCHAR> >::Create(&JsonObjStr, 0);
+            TSharedRef<TJsonWriter<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>> JsonWriter = TJsonWriterFactory<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>::Create(&JsonObjStr, 0);
 
             FJsonSerializer::Serialize(JSonObject, JsonWriter, true);
 
@@ -186,10 +187,10 @@ bool UNVDataObject::SerializeToJsonFile(const UNVDataObject* DataObject, const F
     return bResult;
 }
 
-UNVDataObject* UNVDataObject::DeserializeFromJsonFile(const FString& SourceFilePath, UObject* InParent, FName InName, EObjectFlags Flags)
+UNVDataObject *UNVDataObject::DeserializeFromJsonFile(const FString &SourceFilePath, UObject *InParent, FName InName, EObjectFlags Flags)
 {
-    UNVDataObject* result = nullptr;
-    ensure(InParent!=nullptr);
+    UNVDataObject *result = nullptr;
+    ensure(InParent != nullptr);
     if (InParent == nullptr)
     {
         UE_LOG(LogNVDataObject, Error, TEXT("invalid argument."));
@@ -199,16 +200,16 @@ UNVDataObject* UNVDataObject::DeserializeFromJsonFile(const FString& SourceFileP
         FString JsonString = TEXT("");
         if (FFileHelper::LoadFileToString(JsonString, *SourceFilePath))
         {
-            result= DeserializeFromJsonString(JsonString, InParent, InName, Flags);
+            result = DeserializeFromJsonString(JsonString, InParent, InName, Flags);
         }
     }
     return result;
 }
 
-UNVDataObject* UNVDataObject::DeserializeFromJsonString(const FString& SourceJsonString, UObject* InParent, FName InName, EObjectFlags Flags)
+UNVDataObject *UNVDataObject::DeserializeFromJsonString(const FString &SourceJsonString, UObject *InParent, FName InName, EObjectFlags Flags)
 {
-    UNVDataObject* ImportedDataObj = nullptr;
-    ensure(InParent!=nullptr);
+    UNVDataObject *ImportedDataObj = nullptr;
+    ensure(InParent != nullptr);
     if (InParent == nullptr)
     {
         UE_LOG(LogNVDataObject, Error, TEXT("invalid argument."));
@@ -216,7 +217,7 @@ UNVDataObject* UNVDataObject::DeserializeFromJsonString(const FString& SourceJso
     else
     {
         TSharedPtr<FJsonObject> JsonObject;
-        TSharedRef<TJsonReader<> > JsonReader = TJsonReaderFactory<>::Create(SourceJsonString);
+        TSharedRef<TJsonReader<>> JsonReader = TJsonReaderFactory<>::Create(SourceJsonString);
         if (!FJsonSerializer::Deserialize(JsonReader, JsonObject) || !JsonObject.IsValid())
         {
             return nullptr;
@@ -224,12 +225,12 @@ UNVDataObject* UNVDataObject::DeserializeFromJsonString(const FString& SourceJso
 
         // TODO: Group all these fields into a namespace
         static const FString ClassNameFieldString = TEXT("_class");
-        const FString& ObjectClassName = JsonObject->GetStringField(ClassNameFieldString);
-        UClass* FindClassType = UStruct::StaticClass();
+        const FString &ObjectClassName = JsonObject->GetStringField(ClassNameFieldString);
+        UClass *FindClassType = UStruct::StaticClass();
 
-        UObject* LoadedClassObj = StaticLoadObject(FindClassType, nullptr, *ObjectClassName, nullptr, LOAD_None, nullptr, true);
-        UStruct* ObjectStructType = Cast<UStruct>(LoadedClassObj);
-        UClass* ObjectClassType = Cast<UClass>(LoadedClassObj);
+        UObject *LoadedClassObj = StaticLoadObject(FindClassType, nullptr, *ObjectClassName, nullptr, LOAD_None, nullptr, true);
+        UStruct *ObjectStructType = Cast<UStruct>(LoadedClassObj);
+        UClass *ObjectClassType = Cast<UClass>(LoadedClassObj);
 
         if (ObjectClassType)
         {
@@ -245,13 +246,13 @@ UNVDataObject* UNVDataObject::DeserializeFromJsonString(const FString& SourceJso
     return ImportedDataObj;
 }
 
-UObject* UNVDataObject::CreateObjectFromDefinitionData(UNVDataObjectAsset* DefinitionDataObj)
+UObject *UNVDataObject::CreateObjectFromDefinitionData(UNVDataObjectAsset *DefinitionDataObj)
 {
     // TODO
     return nullptr;
 }
 
-void UNVDataObject::Serialize(FArchive& Ar)
+void UNVDataObject::Serialize(FArchive &Ar)
 {
     Super::Serialize(Ar);
 

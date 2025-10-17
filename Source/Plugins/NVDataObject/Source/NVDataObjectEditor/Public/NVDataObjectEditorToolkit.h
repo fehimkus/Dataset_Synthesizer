@@ -7,7 +7,7 @@
 #pragma once
 
 #include "Toolkits/SimpleAssetEditor.h"
-
+#include "Styling/AppStyle.h"
 //General Log
 DECLARE_LOG_CATEGORY_EXTERN(LogNVDataObjectEditorToolkit, Log, All)
 
@@ -63,7 +63,7 @@ protected:
     static const FName PropertiesTabId;
 
     /** Dockable tab for properties */
-    TSharedPtr< SDockableTab > PropertiesTab;
+    TSharedPtr< SDockTab > PropertiesTab;
 
     /** Details view */
     TSharedPtr< class IDetailsView > DetailsView;
@@ -79,7 +79,7 @@ class FNVDataObjectEditorCommonCommands : public TCommands< FNVDataObjectEditorC
 {
 public:
     FNVDataObjectEditorCommonCommands()
-        : TCommands< FNVDataObjectEditorCommonCommands >(TEXT("NVDataObjectEditor"), NSLOCTEXT("Contexts", "NVDataObjectEditor", "NV Data Object Editor"), TEXT("EditorViewport"), FEditorStyle::GetStyleSetName())
+        : TCommands<FNVDataObjectEditorCommonCommands>(TEXT("NVDataObjectEditor"), NSLOCTEXT("Contexts", "NVDataObjectEditor", "NV Data Object Editor"), TEXT("EditorViewport"), FAppStyle::GetAppStyleSetName())
     {
     }
 

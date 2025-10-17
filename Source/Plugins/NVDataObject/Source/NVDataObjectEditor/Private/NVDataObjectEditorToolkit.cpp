@@ -274,9 +274,9 @@ void FNVDataObjectEditorToolkit::RegisterTabSpawners(const TSharedRef<class FTab
     FAssetEditorToolkit::RegisterTabSpawners(NewTabManager);
 
     NewTabManager->RegisterTabSpawner(PropertiesTabId, FOnSpawnTab::CreateSP(this, &FNVDataObjectEditorToolkit::SpawnPropertiesTab))
-    .SetDisplayName(LOCTEXT("PropertiesTab", "Details"))
-    .SetGroup(WorkspaceMenuCategory.ToSharedRef())
-    .SetIcon(FSlateIcon(FEditorStyle::GetStyleSetName(), "LevelEditor.Tabs.Details"));
+        .SetDisplayName(LOCTEXT("PropertiesTab", "Details"))
+        .SetGroup(WorkspaceMenuCategory.ToSharedRef())
+        .SetIcon(FSlateIcon(FAppStyle::GetAppStyleSetName(), "LevelEditor.Tabs.Details"));
 }
 
 void FNVDataObjectEditorToolkit::UnregisterTabSpawners(const TSharedRef<class FTabManager>& OldTabManager)
@@ -291,7 +291,7 @@ TSharedRef<SDockTab> FNVDataObjectEditorToolkit::SpawnPropertiesTab(const FSpawn
     check(Args.GetTabId() == PropertiesTabId);
 
     return SNew(SDockTab)
-           .Icon(FEditorStyle::GetBrush("GenericEditor.Tabs.Properties"))
+           .Icon(FAppStyle::GetBrush("GenericEditor.Tabs.Properties"))
            .Label(LOCTEXT("GenericDetailsTitle", "Details"))
            .TabColorScale(GetTabColorScale())
            [
