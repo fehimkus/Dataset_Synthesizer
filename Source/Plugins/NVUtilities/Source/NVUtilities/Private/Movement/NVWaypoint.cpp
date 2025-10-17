@@ -4,7 +4,7 @@
 * International License.  (https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode)
 */
 #include "NVUtilitiesModule.h"
-#include "NVWaypoint.h"
+#include "Movement/NVWaypoint.h"
 
 ANVWaypoint::ANVWaypoint(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {

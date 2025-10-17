@@ -4,8 +4,8 @@
 * International License.  (https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode)
 */
 #include "NVUtilitiesModule.h"
-#include "NVMovementComponent_Waypoint.h"
-#include "NVWaypoint.h"
+#include "Movement/NVMovementComponent_Waypoint.h"
+#include "Movement/NVWaypoint.h"
 #include "NVNavigationPath.h"
 
 UNVMovementComponent_Waypoint::UNVMovementComponent_Waypoint() : Super()

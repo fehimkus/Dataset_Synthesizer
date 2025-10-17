@@ -4,7 +4,7 @@
 * International License.  (https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode)
 */
 #include "NVUtilitiesModule.h"
-#include "NVMovementComponentBase.h"
+#include "Movement/NVMovementComponentBase.h"
 
 UNVMovementComponentBase::UNVMovementComponentBase() : Super()
 {
