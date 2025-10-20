@@ -50,7 +50,7 @@ NDDS can capture **RGB**, **depth**, **segmentation**, **normals**, **bounding b
 ### 1️⃣ Clone with Git LFS
 ```bash
 git lfs install
-git clone https://github.com/<your-username>/Dataset_Synthesizer.git NDDS
+git clone https://github.com/fehimkus/Dataset_Synthesizer.git NDDS
 cd NDDS
 ```
 
