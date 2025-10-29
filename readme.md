@@ -1,5 +1,5 @@
 # NVIDIA Deep Learning Dataset Synthesizer (NDDS) — **UE5 Modern Port**
-### ⚡ Fully updated for Unreal Engine 5.5 (Linux / Windows / macOS)
+### ⚡ Buildable but pictures all dark !!!
 
 ![NDDS Demo](./NDDSIntro.png)
 
